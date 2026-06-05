@@ -29,14 +29,20 @@ func _on_area_entered(area: Area3D) -> void:
 	_already_hit.append(hurt)
 	var dmg := 8
 	var knocks_down := false
+	var knockback := 6.0
 	if owner_fighter:
 		# The Fighter sets these per swing (punch / kick / drop kick).
 		if "_current_attack_damage" in owner_fighter:
 			dmg = owner_fighter._current_attack_damage
 		if "_attack_knocks_down" in owner_fighter:
 			knocks_down = owner_fighter._attack_knocks_down
+		if "_current_attack_knockback" in owner_fighter:
+			knockback = owner_fighter._current_attack_knockback
 	var from_pos: Vector3 = owner_fighter.global_position if owner_fighter else global_position
-	hurt.receive_hit(dmg, from_pos, knocks_down)
+	hurt.receive_hit(dmg, from_pos, knocks_down, knockback)
+	# Let the attacker react to a successful hit (e.g. stop a lunge on impact).
+	if owner_fighter and owner_fighter.has_method("on_attack_connected"):
+		owner_fighter.on_attack_connected()
 
 func set_active(active: bool) -> void:
 	monitoring = active

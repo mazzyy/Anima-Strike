@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene format=3 uid="uid://b3w648kp4ods6"]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/HUD.tscn" id="2"]
@@ -12,34 +12,35 @@ size = Vector3(60, 1, 60)
 [sub_resource type="StandardMaterial3D" id="FloorMat"]
 albedo_color = Color(0.23, 0.25, 0.3, 1)
 
-[node name="Arena" type="Node3D"]
+[node name="Arena" type="Node3D" unique_id=1532727548]
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=247610579]
 transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 8, 4)
 shadow_enabled = true
 
-[node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.906308, 0.422618, 0, -0.422618, 0.906308, 0, 11, 22)
+[node name="Camera3D" type="Camera3D" parent="." unique_id=164656754]
+transform = Transform3D(1, 0, 0, 0, 0.79441464, 0.6073758, 0, -0.6073758, 0.79441464, 0, 11, 22)
+keep_aspect = 0
+near = 0.077
+far = 404.78
 
-[node name="Floor" type="StaticBody3D" parent="."]
-collision_layer = 1
-collision_mask = 1
+[node name="Floor" type="StaticBody3D" parent="." unique_id=1438183895]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor" unique_id=1258857992]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 shape = SubResource("FloorShape")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Floor"]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Floor" unique_id=1066132215]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 mesh = SubResource("FloorMesh")
 surface_material_override/0 = SubResource("FloorMat")
 
-[node name="Player1" parent="." instance=ExtResource("1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2, 1, 0)
-action_prefix = "p1"
+[node name="Player1" parent="." unique_id=1191052721 instance=ExtResource("1")]
+transform = Transform3D(1.6, 0, 0, 0, 1.6, 0, 0, 0, 1.6, -2, 1, 0)
 
-[node name="Player2" parent="." instance=ExtResource("1")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 1, 0)
+[node name="Player2" parent="." unique_id=988796793 instance=ExtResource("1")]
+transform = Transform3D(1.6, 0, 0, 0, 1.6, 2.797529e-07, 0, -2.797529e-07, 1.6, 2, 1, 0)
+wall_min_slide_angle = 0.0715585
 action_prefix = "p2"
 
-[node name="HUD" parent="." instance=ExtResource("2")]
+[node name="HUD" parent="." unique_id=1257063899 instance=ExtResource("2")]

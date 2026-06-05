@@ -10,6 +10,6 @@ var owner_fighter: Node
 func _ready() -> void:
 	owner_fighter = get_node_or_null(owner_fighter_path)
 
-func receive_hit(damage: int, from_position: Vector3, knocks_down: bool = false) -> void:
+func receive_hit(damage: int, from_position: Vector3, knocks_down: bool = false, knockback: float = 6.0) -> void:
 	if owner_fighter and owner_fighter.has_method("take_hit"):
-		owner_fighter.take_hit(damage, from_position, knocks_down)
+		owner_fighter.take_hit(damage, from_position, knocks_down, knockback)

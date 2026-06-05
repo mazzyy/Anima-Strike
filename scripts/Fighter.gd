@@ -37,10 +37,11 @@ class_name Fighter
 @export_group("Kick (heavy attack)")
 @export var kick_duration: float = 0.6       # fallback if a clip has no length
 @export var kick_damage: int = 14
-@export var kick_knockback: float = 10.0     # kicks knock the enemy down
+@export var kick_knockback: float = 4.0      # small pushback for the light kick
 
 @export_group("Drop kick (run + kick)")
 @export var dropkick_damage: int = 18
+@export var dropkick_knockback: float = 14.0 # strong shove that drops the enemy
 @export var dropkick_lunge: float = 11.0     # forward lunge speed during the move
 @export var dropkick_lunge_time: float = 0.45  # how long the forward lunge lasts
 @export var dropkick_start_offset: float = 0.8 # skip this many secs of the clip's run-up slide
@@ -54,6 +55,7 @@ class_name Fighter
 @export var block_pushback: float = 2.0
 @export var knockdown_duration: float = 0.8  # time lying down before getting up
 @export var getup_duration: float = 0.6
+@export var knockdown_speed: float = 1.8     # playback speed of the fall (higher = faster fall)
 
 @export_group("Input")
 ## Prefix for this fighter's input actions, e.g. "p1" -> "p1_left", "p1_attack".
@@ -111,8 +113,11 @@ var _state_time: float = 0.0     # seconds spent in current state
 var _hitbox_live: bool = false
 var _attack_knocks_down: bool = false   # does the current swing cause a knockdown
 var _current_attack_damage: int = 8     # damage of the current swing (read by Hitbox)
+var _current_attack_knockback: float = 6.0  # knockback of the current swing
+var _dropkick_connected: bool = false   # set when a drop kick lands, halts the lunge
 var _dash_dir: Vector3 = Vector3.ZERO   # locked direction during a dash
 var _swing_len: float = 0.45            # length of the current attack clip
+var _reaction_len: float = 0.35         # length of the current hit/knockdown clip
 
 @onready var anim: AnimationPlayer = _find_animation_player()
 @onready var model: Node3D = _find_model()
@@ -230,6 +235,7 @@ func _process_jump(delta: float) -> void:
 
 	if _pressed("attack"):
 		_enter_state(State.ATTACK)   # jump attack
+		_attack_knocks_down = true   # air attacks knock the enemy down (drop hit)
 		return
 
 	if is_on_floor() and velocity.y <= 0.0:
@@ -241,8 +247,12 @@ func _process_swing(delta: float) -> void:
 	# full length of the animation clip; the hitbox is live for a fraction of it.
 	var active_start := _swing_len * hit_window_start
 	var active_end := _swing_len * hit_window_end
+	if state == State.DROPKICK:
+		# Drop kick connects DURING the leap (not late in the long clip).
+		active_start = 0.1
+		active_end = dropkick_lunge_time + 0.2
 
-	if state == State.DROPKICK and _state_time < dropkick_lunge_time:
+	if state == State.DROPKICK and _state_time < dropkick_lunge_time and not _dropkick_connected:
 		# Quick committed forward leap in the facing direction.
 		var fwd := Vector3(sin(rotation.y), 0, cos(rotation.y))
 		velocity.x = fwd.x * dropkick_lunge
@@ -286,19 +296,19 @@ func _process_dash(delta: float) -> void:
 
 func _process_hit(delta: float) -> void:
 	_decelerate(delta)
-	if _state_time >= hit_stun:
+	if _state_time >= _reaction_len:
 		_enter_state(State.IDLE)
 
 
 func _process_knockdown(delta: float) -> void:
-	_decelerate(delta * 2.0)  # slide to a stop quickly when knocked down
-	if _state_time >= knockdown_duration:
+	_decelerate(delta)  # slide back from the impact, then settle
+	if _state_time >= _reaction_len:
 		_enter_state(State.GETUP)
 
 
 func _process_getup(delta: float) -> void:
 	_decelerate(delta)
-	if _state_time >= getup_duration:
+	if _state_time >= _reaction_len:
 		_enter_state(State.IDLE)
 
 
@@ -308,7 +318,7 @@ func _process_getup(delta: float) -> void:
 ## Called by a Hurtbox when this fighter is struck.
 ## knocks_down: if true (e.g. a kick), a non-lethal hit puts the fighter on the
 ## ground instead of just flinching.
-func take_hit(damage: int, from_position: Vector3, knocks_down: bool = false) -> void:
+func take_hit(damage: int, from_position: Vector3, knocks_down: bool = false, knockback: float = 6.0) -> void:
 	if state == State.KO or state == State.KNOCKDOWN or state == State.GETUP:
 		return
 
@@ -344,9 +354,8 @@ func take_hit(damage: int, from_position: Vector3, knocks_down: bool = false) ->
 		return
 	_spawn_hit_effect(fx_pos, Color(1.0, 0.85, 0.3))      # yellow spark = clean hit
 
-	var force := kick_knockback if knocks_down else knockback_force
-	velocity.x = away.x * force
-	velocity.z = away.z * force
+	velocity.x = away.x * knockback
+	velocity.z = away.z * knockback
 
 	# Lethal hits go straight to KO via the HealthComponent.died signal.
 	if health and health.has_method("is_alive") and not health.is_alive():
@@ -355,6 +364,15 @@ func take_hit(damage: int, from_position: Vector3, knocks_down: bool = false) ->
 		_enter_state(State.KNOCKDOWN)
 	else:
 		_enter_state(State.HIT)
+
+
+## Called by the Hitbox when this fighter's attack connects with an enemy,
+## so a lunging move (drop kick) stops on impact instead of passing through.
+func on_attack_connected() -> void:
+	if state == State.DROPKICK:
+		_dropkick_connected = true
+		velocity.x = 0.0
+		velocity.z = 0.0
 
 
 func _on_died() -> void:
@@ -401,13 +419,19 @@ func _enter_state(new_state: int) -> void:
 			State.ATTACK:
 				_attack_knocks_down = false
 				_current_attack_damage = attack_damage
+				_current_attack_knockback = knockback_force
 			State.KICK:
-				_attack_knocks_down = true
+				# Simple kick: a light hit (flinch + small pushback), no fall.
+				_attack_knocks_down = false
 				_current_attack_damage = kick_damage
+				_current_attack_knockback = kick_knockback
 				fallback = kick_duration
 			State.DROPKICK:
+				# Drop kick: heavy hit that knocks the enemy down.
 				_attack_knocks_down = true
 				_current_attack_damage = dropkick_damage
+				_current_attack_knockback = dropkick_knockback
+				_dropkick_connected = false
 				fallback = kick_duration
 		var clip := _anim_for(new_state)
 		_swing_len = fallback
@@ -416,6 +440,23 @@ func _enter_state(new_state: int) -> void:
 		# Drop kick: skip the clip's run-up slide at the start.
 		if new_state == State.DROPKICK:
 			_swing_len = maxf(0.2, _swing_len - dropkick_start_offset)
+	# Reaction states last as long as their clip (so it isn't cut short).
+	if new_state == State.HIT or new_state == State.KNOCKDOWN or new_state == State.GETUP:
+		var rclip := _anim_for(new_state)
+		var rfallback := hit_stun
+		if new_state == State.KNOCKDOWN:
+			rfallback = knockdown_duration
+		elif new_state == State.GETUP:
+			rfallback = getup_duration
+		_reaction_len = rfallback
+		if anim and anim.has_animation(rclip):
+			_reaction_len = anim.get_animation(rclip).length
+		# Play the fall faster, and shorten the state to match.
+		if new_state == State.KNOCKDOWN:
+			_reaction_len /= maxf(0.1, knockdown_speed)
+	# Speed up the knockdown clip; everything else plays at normal speed.
+	if anim:
+		anim.speed_scale = knockdown_speed if new_state == State.KNOCKDOWN else 1.0
 	var should_loop := new_state in [State.IDLE, State.WALK, State.RUN, State.BLOCK]
 	_play(_anim_for(new_state), should_loop)
 	# Drop kick: jump past the run-up portion of the animation.
