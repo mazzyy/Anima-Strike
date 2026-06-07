@@ -1,62 +1,161 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/HUD.gd" id="1"]
 
-[sub_resource type="StyleBoxFlat" id="BarBG"]
-bg_color = Color(0.1, 0.1, 0.12, 0.7)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
+[sub_resource type="StyleBoxFlat" id="Frame"]
+bg_color = Color(0.06, 0.07, 0.09, 0.55)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.55, 0.6, 0.7, 0.35)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 8
 
-[sub_resource type="StyleBoxFlat" id="BarFill"]
-bg_color = Color(0.85, 0.2, 0.2, 1)
+[sub_resource type="StyleBoxFlat" id="BarBG"]
+bg_color = Color(0.04, 0.045, 0.06, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0, 0, 0.6)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 3.0
+content_margin_top = 3.0
+content_margin_right = 3.0
+content_margin_bottom = 3.0
+
+[sub_resource type="StyleBoxFlat" id="P1Fill"]
+bg_color = Color(0.88, 0.16, 0.18, 1)
+border_width_top = 2
+border_color = Color(1, 0.55, 0.45, 0.6)
 corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
+shadow_color = Color(0.9, 0.15, 0.15, 0.5)
+shadow_size = 6
+
+[sub_resource type="StyleBoxFlat" id="P2Fill"]
+bg_color = Color(0.16, 0.55, 0.9, 1)
+border_width_top = 2
+border_color = Color(0.6, 0.85, 1, 0.6)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+shadow_color = Color(0.15, 0.5, 0.9, 0.5)
+shadow_size = 6
+
+[sub_resource type="StyleBoxFlat" id="VSBox"]
+bg_color = Color(0.08, 0.09, 0.12, 0.85)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.85, 0.16, 0.18, 0.8)
+corner_radius_top_left = 24
+corner_radius_top_right = 24
+corner_radius_bottom_right = 24
+corner_radius_bottom_left = 24
+shadow_color = Color(0, 0, 0, 0.5)
+shadow_size = 6
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
 
+[node name="P1Frame" type="Panel" parent="."]
+offset_left = 18.0
+offset_top = 14.0
+offset_right = 430.0
+offset_bottom = 86.0
+theme_override_styles/panel = SubResource("Frame")
+
 [node name="P1Label" type="Label" parent="."]
-offset_left = 24.0
+offset_left = 30.0
 offset_top = 18.0
-offset_right = 224.0
-offset_bottom = 40.0
+offset_right = 280.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(0.95, 0.96, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.7)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 18
 text = "PLAYER 1"
 
 [node name="P1Bar" type="ProgressBar" parent="."]
-offset_left = 24.0
-offset_top = 42.0
-offset_right = 384.0
-offset_bottom = 70.0
+offset_left = 30.0
+offset_top = 46.0
+offset_right = 418.0
+offset_bottom = 78.0
 max_value = 100.0
 value = 100.0
 show_percentage = false
 theme_override_styles/background = SubResource("BarBG")
-theme_override_styles/fill = SubResource("BarFill")
+theme_override_styles/fill = SubResource("P1Fill")
+
+[node name="P2Frame" type="Panel" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -430.0
+offset_top = 14.0
+offset_right = -18.0
+offset_bottom = 86.0
+theme_override_styles/panel = SubResource("Frame")
 
 [node name="P2Label" type="Label" parent="."]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -224.0
+offset_left = -280.0
 offset_top = 18.0
-offset_right = -24.0
-offset_bottom = 40.0
+offset_right = -30.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(0.95, 0.96, 1, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.7)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 18
 text = "PLAYER 2"
 horizontal_alignment = 2
 
 [node name="P2Bar" type="ProgressBar" parent="."]
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -384.0
-offset_top = 42.0
-offset_right = -24.0
-offset_bottom = 70.0
+offset_left = -418.0
+offset_top = 46.0
+offset_right = -30.0
+offset_bottom = 78.0
 max_value = 100.0
 value = 100.0
 show_percentage = false
 fill_mode = 1
 theme_override_styles/background = SubResource("BarBG")
-theme_override_styles/fill = SubResource("BarFill")
+theme_override_styles/fill = SubResource("P2Fill")
+
+[node name="VSBadge" type="Panel" parent="."]
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -28.0
+offset_top = 22.0
+offset_right = 28.0
+offset_bottom = 78.0
+theme_override_styles/panel = SubResource("VSBox")
+
+[node name="VSLabel" type="Label" parent="VSBadge"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_colors/font_color = Color(0.95, 0.3, 0.32, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.7)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 24
+text = "VS"
+horizontal_alignment = 1
+vertical_alignment = 1

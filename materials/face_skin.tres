@@ -1,0 +1,19 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://bpcjdtw72k441"]
+
+[ext_resource type="Shader" path="res://materials/face_skin.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://3r3pm6mwx0d7" path="res://charactos /Untitled_Knight_diffuse.png" id="2_base"]
+[ext_resource type="Texture2D" uid="uid://cvy5sic1llqro" path="res://charactos /Untitled_Knight_normal.png" id="3_norm"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/skin_tint = Color(1, 0.97, 0.93, 1)
+shader_parameter/brightness = 1.08
+shader_parameter/saturation = 1.05
+shader_parameter/roughness_amount = 0.55
+shader_parameter/normal_strength = 0.75
+shader_parameter/rim_color = Color(0.5, 0.55, 0.62, 1)
+shader_parameter/rim_power = 4.5
+shader_parameter/rim_strength = 0.22
+shader_parameter/base_tex = ExtResource("2_base")
+shader_parameter/normal_tex = ExtResource("3_norm")

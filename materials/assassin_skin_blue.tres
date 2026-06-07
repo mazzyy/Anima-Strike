@@ -1,0 +1,23 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://bxcow3p4cpbya"]
+
+[ext_resource type="Shader" path="res://materials/assassin_skin.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://3r3pm6mwx0d7" path="res://charactos /Untitled_Knight_diffuse.png" id="2_base"]
+[ext_resource type="Texture2D" uid="uid://cvy5sic1llqro" path="res://charactos /Untitled_Knight_normal.png" id="3_norm"]
+[ext_resource type="Texture2D" uid="uid://crrj2u341vn3e" path="res://charactos /Untitled_Knight_specular.png" id="4_spec"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_shader")
+shader_parameter/tint_color = Color(0.36, 0.46, 0.62, 1)
+shader_parameter/desaturation = 0.6
+shader_parameter/darkness = 0.4
+shader_parameter/contrast = 1.18
+shader_parameter/metallic_amount = 0.7
+shader_parameter/roughness_amount = 0.42
+shader_parameter/normal_strength = 1.15
+shader_parameter/rim_color = Color(0.18, 0.55, 0.95, 1)
+shader_parameter/rim_power = 3.2
+shader_parameter/rim_strength = 1.15
+shader_parameter/base_tex = ExtResource("2_base")
+shader_parameter/normal_tex = ExtResource("3_norm")
+shader_parameter/spec_tex = ExtResource("4_spec")
