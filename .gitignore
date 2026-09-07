@@ -1,3 +1,19 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# Azure automation
+.env
+automation/out/
+automation/usage.json
+automation/__pycache__/
+automation/lftool/__pycache__/
+*.gd.bak
+*.tscn.bak
+
+# macOS metadata (exFAT drives create these for every file)
+.DS_Store
+._*
+
+# stray desktop-app folder
+Claude outputs/

@@ -1,0 +1,32 @@
+{
+  "name": "little-fighters-3d",
+  "version": "1.0.0",
+  "description": "Little Fighter 2-style 3D beat-'em-up — three.js in an Electron desktop app",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node tools/setup-assets.mjs",
+    "assets": "node tools/setup-assets.mjs",
+    "start": "electron .",
+    "test": "node --test tools/*.test.mjs",
+    "dist": "electron-builder --mac --dir",
+    "pack": "electron-builder --mac"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "tech.musawar.littlefighters",
+    "productName": "Little Fighters",
+    "directories": { "output": "dist" },
+    "files": ["electron/**/*", "renderer/**/*", "package.json"],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.games"
+    }
+  }
+}

@@ -99,7 +99,7 @@ class_name Fighter
 	"dash": "res://animations/dash.glb",
 	"knockdown": "res://animations/knockdown.glb",
 	"getup": "res://animations/getup.glb",
-	"death": "res://animations/death.glb",
+	"death": "res://animations/Death.glb",
 }
 
 # ---------------------------------------------------------------------------
@@ -123,6 +123,26 @@ var _reaction_len: float = 0.35         # length of the current hit/knockdown cl
 @onready var model: Node3D = _find_model()
 @onready var health: Node = get_node_or_null("HealthComponent")
 @onready var hitbox: Area3D = get_node_or_null("Hitbox")
+
+# --- AI intent (written by AIController when ai_controlled is true) ---------
+## Desired movement, same axes and scale as a human's _move_input().
+var ai_move: Vector2 = Vector2.ZERO
+## Action name -> currently held (e.g. "block", "run").
+var ai_hold: Dictionary = {}
+## Action name -> pressed this frame. Cleared automatically each physics tick,
+## which is what gives AI presses the same one-shot behaviour as "just pressed".
+var _ai_presses: Dictionary = {}
+
+
+## Queue a one-frame press for an AI-driven fighter.
+func ai_press(action: String) -> void:
+	_ai_presses[action] = true
+
+
+## Set or clear a held button for an AI-driven fighter.
+func ai_hold_set(action: String, down: bool) -> void:
+	ai_hold[action] = down
+
 
 signal state_changed(new_state)
 
@@ -171,6 +191,10 @@ func _physics_process(delta: float) -> void:
 			_decelerate(delta)
 
 	move_and_slide()
+
+	# One-frame AI presses are consumed here, mirroring "just pressed".
+	if ai_controlled and not _ai_presses.is_empty():
+		_ai_presses.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +519,10 @@ func _anim_for(s: int) -> String:
 # ---------------------------------------------------------------------------
 func _move_input() -> Vector2:
 	if ai_controlled:
-		return Vector2.ZERO
+		var v := ai_move
+		if v.length() > 1.0:
+			v = v.normalized()
+		return v
 	# x = left/right, y = up/down screen (mapped to world Z)
 	var x := Input.get_action_strength(_act("right")) - Input.get_action_strength(_act("left"))
 	var y := Input.get_action_strength(_act("down")) - Input.get_action_strength(_act("up"))
@@ -542,10 +569,14 @@ func _act(name: String) -> String:
 	return "%s_%s" % [action_prefix, name]
 
 func _pressed(name: String) -> bool:
-	return not ai_controlled and Input.is_action_just_pressed(_act(name))
+	if ai_controlled:
+		return bool(_ai_presses.get(name, false))
+	return Input.is_action_just_pressed(_act(name))
 
 func _held(name: String) -> bool:
-	return not ai_controlled and Input.is_action_pressed(_act(name))
+	if ai_controlled:
+		return bool(ai_hold.get(name, false))
+	return Input.is_action_pressed(_act(name))
 
 
 func _load_external_animations() -> void:

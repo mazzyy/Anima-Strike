@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Little Fighters</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/build/three.module.js",
+      "three/addons/": "./vendor/three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p id="loading-label">loading…</p>
+  </div>
+
+  <div id="hud">
+    <div class="bar-row">
+      <div class="bar left">
+        <span class="label">PLAYER</span>
+        <div class="track"><div id="p1-fill" class="fill"></div></div>
+      </div>
+      <div class="bar right">
+        <span class="label">CPU</span>
+        <div class="track"><div id="p2-fill" class="fill"></div></div>
+      </div>
+    </div>
+
+    <div id="ai-taunt"></div>
+
+    <div id="brain">
+      <div class="brain-row"><span class="k">plan</span><span id="ai-plan">—</span></div>
+      <div class="brain-row"><span class="k">azure</span><span id="ai-usage">no calls yet</span></div>
+    </div>
+
+    <div id="controls">
+      <b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump ·
+      <b>J</b> punch · <b>K</b> kick · <b>L</b> block · <b>U</b> dash
+      <span class="hint">run + K = drop kick</span>
+    </div>
+  </div>
+
+  <div id="banner"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

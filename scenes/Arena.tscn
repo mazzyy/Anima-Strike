@@ -3,6 +3,8 @@
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/HUD.tscn" id="2"]
 [ext_resource type="PackedScene" uid="uid://3wbmjvm84o5c" path="res://backgrounds/base_basic_pbr.glb" id="3"]
+[ext_resource type="Script" path="res://scripts/AzureBrain.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/AIController.gd" id="5"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky"]
 sky_top_color = Color(0.02, 0.03, 0.09, 1)
@@ -106,5 +108,16 @@ transform = Transform3D(1.4, 0, 0, 0, 1.4, 0, 0, 0, 1.4, -2, 1, 0)
 transform = Transform3D(1.4, 0, 0, 0, 1.4, 0, 0, 0, 1.4, 2, 1, 0)
 wall_min_slide_angle = 0.0715585
 action_prefix = "p2"
+ai_controlled = true
+
+[node name="AzureBrain" type="Node" parent="Player2" unique_id=445120783]
+script = ExtResource("4")
+
+[node name="AIController" type="Node" parent="Player2" unique_id=889341276]
+script = ExtResource("5")
+fighter_path = NodePath("..")
+opponent_path = NodePath("../../Player1")
+brain_path = NodePath("../AzureBrain")
+debug_log = true
 
 [node name="HUD" parent="." unique_id=114940225 instance=ExtResource("2")]

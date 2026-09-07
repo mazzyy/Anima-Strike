@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "The backlog `lf build` works through. Each item becomes one codegen call,",
+    "applied and then gated by the headless tests; a failure is reverted and the",
+    "reason lands in `note`.",
+    "",
+    "Ordered so earlier items don't depend on later ones. `files` narrows the",
+    "context sent to the model, which is the difference between a 16k-token call",
+    "and a 4k one — leave it off when a change could touch anything.",
+    "",
+    "Add your own:  python3 automation/lf.py roadmap add \"...\" --detail \"...\""
+  ],
+  "items": [
+    {
+      "id": 1,
+      "title": "Add a round timer and best-of-3 rounds",
+      "detail": "A 60-second countdown in the HUD. When it hits zero, whoever has more health wins the round. First to two rounds wins the match. Between rounds, reset both fighters to their spawn points and refill health, with a short 'ROUND 2' banner. Show round pips next to each health bar. Add tests for the round-win and timeout-win conditions.",
+      "files": [],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 2,
+      "title": "Add input buffering and a combo counter",
+      "detail": "Buffer an attack press for ~150ms so a button hit slightly before the current move ends still registers, which is what makes chained attacks feel good. Track consecutive hits landed on a fighter within 1.2s of each other as a combo, and show the count in the HUD near that fighter's health bar. Reset on timeout or when the fighter recovers.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/hud.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 3,
+      "title": "Make the camera track both fighters",
+      "detail": "Instead of a fixed camera, keep both fighters framed: follow the midpoint on X/Z and pull back as they separate, clamped so it never leaves the arena or gets closer than the current framing. Smooth it with damping so it never snaps. Keep the same pitch and field of view.",
+      "files": [
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 4,
+      "title": "Add a main menu and pause screen",
+      "detail": "A title screen before the fight with 'Fight the CPU', 'Two players' and a difficulty selector (which sets the AI's base aggression and think interval). Escape pauses mid-fight with resume and quit-to-menu. The game loop should stop advancing while paused. Keep it all in the existing DOM overlay style rather than rendering menus in three.js.",
+      "files": [],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 5,
+      "title": "Add a second local player option",
+      "detail": "Let the second fighter be driven by keyboardController('p2') instead of the AI, chosen from the menu. The p2 bindings already exist in input.js. Make sure the AI is not constructed at all in two-player mode so no API calls are made.",
+      "files": [
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/input.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 6,
+      "title": "Add light and heavy attack variants",
+      "detail": "Split the punch into a light jab (faster, less damage, less recovery) and a heavy punch (slower, more damage, more knockback) on separate buttons. Reuse the existing punch clip for both with different playback speeds until dedicated clips exist. Extend the AI's attack vocabulary to include them.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/input.js",
+        "little-fighters-js/renderer/src/ai.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 7,
+      "title": "Add hit-stop and a KO slow-motion finish",
+      "detail": "Freeze both fighters for ~60ms when a heavy hit lands, which is what gives impacts weight. On the killing blow, drop the global time scale to about 0.35 for a second and push the camera slightly closer before the KO banner. Implement as a time-scale multiplier applied in the game loop so nothing else needs to know about it.",
+      "files": [
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 8,
+      "title": "Add procedural sound effects",
+      "detail": "Use the Web Audio API to synthesise the sounds rather than shipping audio files: a short noise burst with a low thump for a landed hit, a duller filtered version for a blocked one, a whoosh for a whiffed swing, a thud on landing from a jump. Keep it in a new renderer/src/audio.js with a single play(name) entry point, and a master mute toggle on M.",
+      "files": [
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/fighter.js"
+      ],
+      "status": "pending",
+      "note": ""
+    }
+  ]
+}

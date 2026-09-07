@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "USD per 1,000,000 tokens, used only for cost accounting in automation/usage.json.",
+    "A model with no entry here still has its tokens counted exactly; the cost is",
+    "reported as unknown rather than guessed.",
+    "Set your deployment's real rates from the Azure pricing page with:",
+    "    python3 automation/lf.py price gpt-6-astra --in 1.25 --out 10.00",
+    "Add --cached N if your deployment discounts cached input tokens."
+  ],
+  "models": {
+    "gpt-6-astra": {
+      "input_per_1m": null,
+      "output_per_1m": null,
+      "_note": "Your deployment. Rates unknown until you set them \u2014 see above."
+    },
+    "gpt-4o": {
+      "input_per_1m": 2.5,
+      "output_per_1m": 10.0,
+      "cached_input_per_1m": 1.25
+    },
+    "gpt-4o-mini": {
+      "input_per_1m": 0.15,
+      "output_per_1m": 0.6,
+      "cached_input_per_1m": 0.075
+    },
+    "gpt-4.1": {
+      "input_per_1m": 2.0,
+      "output_per_1m": 8.0,
+      "cached_input_per_1m": 0.5
+    },
+    "gpt-4.1-mini": {
+      "input_per_1m": 0.4,
+      "output_per_1m": 1.6,
+      "cached_input_per_1m": 0.1
+    }
+  }
+}
