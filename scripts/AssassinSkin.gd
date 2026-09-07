@@ -18,6 +18,10 @@ enum Variant { CRIMSON, AZURE }
 		if is_inside_tree():
 			apply()
 @export var enabled: bool = true
+## When on, the armor color is chosen automatically from the fighter's
+## action_prefix ("p2" -> azure, otherwise crimson). This is robust against
+## scene re-saves dropping a per-instance override. Turn off to force `variant`.
+@export var auto_by_player: bool = true
 
 const FACE_MAT: Material = preload("res://materials/face_skin.tres")
 const ARMOR_CRIMSON: Material = preload("res://materials/assassin_skin.tres")
@@ -31,7 +35,10 @@ func apply() -> void:
 	var root := get_parent()
 	if root == null:
 		return
-	var armor: Material = ARMOR_AZURE if variant == Variant.AZURE else ARMOR_CRIMSON
+	var use_azure: bool = (variant == Variant.AZURE)
+	if auto_by_player and ("action_prefix" in root):
+		use_azure = (root.action_prefix == "p2")
+	var armor: Material = ARMOR_AZURE if use_azure else ARMOR_CRIMSON
 	for mi in root.find_children("*", "MeshInstance3D", true, false):
 		# Head_Hands -> natural face/skin; everything else -> assassin armor.
 		var is_face := mi.name.to_lower().contains("head")

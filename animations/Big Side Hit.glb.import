@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cf5laalt05m16"
-path="res://.godot/imported/jump.glb-11bae6580f9d79d7a01f7a6a57e0e86b.scn"
+uid="uid://qkvy3wnno1ur"
+path="res://.godot/imported/Big Side Hit.glb-5ba09be86294f4b6d0ef4246cf6f29c7.scn"
 
 [deps]
 
-source_file="res://animations/jump.glb"
-dest_files=["res://.godot/imported/jump.glb-11bae6580f9d79d7a01f7a6a57e0e86b.scn"]
+source_file="res://animations/Big Side Hit.glb"
+dest_files=["res://.godot/imported/Big Side Hit.glb-5ba09be86294f4b6d0ef4246cf6f29c7.scn"]
 
 [params]
 

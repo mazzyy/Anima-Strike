@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cf5laalt05m16"
-path="res://.godot/imported/jump.glb-11bae6580f9d79d7a01f7a6a57e0e86b.scn"
+uid="uid://3wbmjvm84o5c"
+path="res://.godot/imported/base_basic_pbr.glb-46ddb234d8e1ef65c931d92ee648aba1.scn"
 
 [deps]
 
-source_file="res://animations/jump.glb"
-dest_files=["res://.godot/imported/jump.glb-11bae6580f9d79d7a01f7a6a57e0e86b.scn"]
+source_file="res://backgrounds/base_basic_pbr.glb"
+dest_files=["res://.godot/imported/base_basic_pbr.glb-46ddb234d8e1ef65c931d92ee648aba1.scn"]
 
 [params]
 

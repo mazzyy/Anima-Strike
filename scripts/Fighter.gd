@@ -202,11 +202,15 @@ func _process_grounded(delta: float) -> void:
 		return
 	if _pressed("jump") and is_on_floor():
 		velocity.y = jump_velocity
-		# Launch in the held direction so the jump arcs that way.
+		# Launch in the held direction, or straight up if no direction is held
+		# (zero the horizontal velocity so a neutral jump doesn't drift).
 		if dir != Vector2.ZERO:
 			velocity.x = dir.x * jump_move_speed
 			velocity.z = dir.y * jump_move_speed
 			_face_direction(Vector3(dir.x, 0, dir.y), delta)
+		else:
+			velocity.x = 0.0
+			velocity.z = 0.0
 		_enter_state(State.JUMP)
 		return
 
@@ -590,7 +594,9 @@ func _load_external_animations() -> void:
 func _register_clip(lib: AnimationLibrary, clip_name: String, anim_clip: Animation) -> void:
 	# In-place locomotion: remove the hips translation so the clip doesn't drift
 	# the body forward (the code drives movement). Equivalent to Mixamo "In Place".
-	if clip_name in ["walk", "run", "dash"]:
+	# "jump" is included so the clip's built-in vertical leap doesn't stack on top
+	# of the code-driven jump (which would float the body / detach the feet).
+	if clip_name in ["walk", "run", "dash", "jump"]:
 		_strip_root_motion(anim_clip)
 	# Looping clips play continuously instead of restarting with a visible pop.
 	if clip_name in ["idle", "walk", "run", "block"]:
