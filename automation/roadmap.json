@@ -49,8 +49,8 @@
       "title": "Add a main menu and pause screen",
       "detail": "A title screen before the fight with 'Fight the CPU', 'Two players' and a difficulty selector (which sets the AI's base aggression and think interval). Escape pauses mid-fight with resume and quit-to-menu. The game loop should stop advancing while paused. Keep it all in the existing DOM overlay style rather than rendering menus in three.js.",
       "files": [],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
     },
     {
       "id": 5,
@@ -61,8 +61,8 @@
         "little-fighters-js/renderer/src/input.js",
         "little-fighters-js/renderer/src/ai.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add a pre-match menu for CPU or two-player local play. Local mode uses `keyboardController('p2')` and skips AI construction, AI hooks, and all brain status/usage calls. Winner messages reflect the sel"
     },
     {
       "id": 6,
@@ -76,8 +76,8 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/tools/fighter.test.mjs"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
     },
     {
       "id": 7,

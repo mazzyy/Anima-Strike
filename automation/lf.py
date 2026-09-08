@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lftool import (cmd_assets, cmd_blender, cmd_build, cmd_codegen,  # noqa: E402
-                    cmd_models, cmd_opponent, cmd_probe)
+                    cmd_calibrate, cmd_models, cmd_opponent, cmd_probe)
 from lftool import usage as usage_mod  # noqa: E402
 from lftool.azure_client import AzureClient, AzureError  # noqa: E402
 from lftool.config import PROJECT_ROOT, Config  # noqa: E402
@@ -156,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--blender", help="path to the Blender executable or .app")
     d.set_defaults(func=cmd_doctor)
 
+    cal = sub.add_parser("calibrate",
+                         help="measure the deployment's real request limits and record them")
+    cal.add_argument("--force", action="store_true",
+                     help="re-measure even though limits are already recorded")
+    cal.set_defaults(func=cmd_calibrate.run)
+
     md = sub.add_parser("models", help="ask the endpoint which model is deployed")
     md.set_defaults(func=cmd_models.run)
 
@@ -229,6 +235,8 @@ def build_parser() -> argparse.ArgumentParser:
     bd.add_argument("--max", type=int, default=3, help="with --auto, how many items at most")
     bd.add_argument("--repair", type=int, default=1,
                     help="how many times to send failing tests back for a fix (default 1)")
+    bd.add_argument("--retry-blocked", action="store_true",
+                    help="also re-attempt items that previously failed their tests")
     bd.add_argument("--stop-on-block", action="store_true",
                     help="halt if an item's tests will not pass (default: move on)")
     bd.add_argument("--no-gate", action="store_true",

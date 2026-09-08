@@ -247,10 +247,35 @@ def _generate_with_context_recovery(task, item, args, client):
     return retry
 
 
-def _next_item(items, wanted_id=None):
+def _next_item(items, wanted_id=None, retry_blocked=False):
+    """The next item to work on.
+
+    Pending items first. Items blocked by an API/transport failure are retried
+    automatically on a later run — whatever broke the endpoint may since have
+    been fixed, and skipping them forever is not "resuming". Items blocked
+    because the tests failed are left alone unless you ask for them, since
+    retrying those blind tends to repeat the same failure.
+    """
     if wanted_id is not None:
         return next((i for i in items if i["id"] == wanted_id), None)
-    return next((i for i in items if i["status"] == "pending"), None)
+
+    pending = next((i for i in items if i["status"] == "pending"), None)
+    if pending:
+        return pending
+
+    def blocked(kind):
+        return next((i for i in items
+                     if i["status"] == "blocked"
+                     and i.get("blocked_by", "tests") == kind), None)
+
+    infra = blocked("api")
+    if infra:
+        print(f"  [resume] #{infra['id']} was blocked by a connection failure last "
+              f"run — retrying it")
+        return infra
+    if retry_blocked:
+        return blocked("tests")
+    return None
 
 
 def _build_one(item, args, client) -> str:
@@ -267,10 +292,12 @@ def _build_one(item, args, client) -> str:
         proposal = _generate_with_context_recovery(task, item, args, client)
     except AzureError as exc:
         item["note"] = f"API call failed: {str(exc).splitlines()[0]}"
+        item["blocked_by"] = "api"
         print(f"  ! {exc}")
         return "blocked"
     if not proposal.ok:
         item["note"] = "model returned no usable file blocks"
+        item["blocked_by"] = "api"
         print(f"  ! {item['note']}")
         return "blocked"
 
@@ -288,6 +315,7 @@ def _build_one(item, args, client) -> str:
         if passed:
             print(f"PASS  ({_test_summary(output)})")
             item["note"] = (proposal.plan.strip().splitlines() or [""])[0][:200]
+            item.pop("blocked_by", None)
             if proposal.wiring and proposal.wiring.strip().lower() not in ("none.", "none"):
                 print("  wiring needed:")
                 for line in proposal.wiring.splitlines():
@@ -320,6 +348,7 @@ def _build_one(item, args, client) -> str:
     print("  reverting — the tests must stay green.")
     cmd_codegen.revert_proposal(proposal.out, quiet=True)
     item["note"] = f"tests failed: {_test_summary(output)}"
+    item["blocked_by"] = "tests"
     return "blocked"
 
 
@@ -350,12 +379,25 @@ def run_build(args) -> int:
         print("  note: you have uncommitted changes. A commit first makes this")
         print("        easy to unwind if you dislike what gets built.\n")
 
+    pending = sum(1 for i in items if i["status"] == "pending")
+    done = sum(1 for i in items if i["status"] == "done")
+    infra = sum(1 for i in items
+                if i["status"] == "blocked" and i.get("blocked_by") == "api")
+    tests = sum(1 for i in items
+                if i["status"] == "blocked" and i.get("blocked_by", "tests") == "tests")
+    print(f"  resuming: {done} done · {pending} pending"
+          + (f" · {infra} to retry after a connection failure" if infra else "")
+          + (f" · {tests} blocked on failing tests" if tests else ""))
+    if tests and not getattr(args, "retry_blocked", False):
+        print("            (those are skipped; --retry-blocked to attempt them again)")
+
     client = AzureClient()
     built = 0
     limit = args.max if args.auto else 1
 
     while built < limit:
-        item = _next_item(items, args.item if built == 0 else None)
+        item = _next_item(items, args.item if built == 0 else None,
+                          retry_blocked=getattr(args, "retry_blocked", False))
         if item is None:
             print("\nNothing pending on the roadmap." if built else "\nNo pending items.")
             break
