@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "What the client has learned about each deployment, so it stops making",
+    "requests it already knows will be refused. Written automatically \u2014 you",
+    "should not need to edit this.",
+    "",
+    "Delete an entry to make the client re-test that parameter (for example",
+    "after Azure updates the deployment)."
+  ],
+  "gpt-6-astra": {
+    "unsupported_params": [
+      "temperature"
+    ],
+    "learned_at": "2026-09-07T23:50:37+00:00",
+    "notes": {
+      "temperature": "Unsupported parameter: 'temperature' is not supported with this model. Confirmed by `lf probe`; on large request bodies this arrives as a dropped connection rather than an HTTP 400.",
+      "reasoning_model": "Spends output tokens on hidden reasoning (seen: 401 reasoning of 561 output). max_output_tokens must stay generous or replies truncate before any content."
+    }
+  }
+}

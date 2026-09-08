@@ -9,9 +9,10 @@
   ],
   "models": {
     "gpt-6-astra": {
-      "input_per_1m": null,
-      "output_per_1m": null,
-      "_note": "Your deployment. Rates unknown until you set them \u2014 see above."
+      "input_per_1m": 10.0,
+      "output_per_1m": 50.0,
+      "cached_input_per_1m": 1.0,
+      "_note": "GPT-6 Astra, Standard Global, SHORT context (Azure Foundry, Sept 2026). Long-context rates ($20 in / $2 cached / $75 out) apply to any single request over 272,000 input tokens \u2014 nothing here comes close. A Data Zone deployment costs ~10% more; check the Azure pricing page for your region and deployment type."
     },
     "gpt-4o": {
       "input_per_1m": 2.5,

@@ -232,6 +232,37 @@ def unpriced_notice(model: str) -> str | None:
     )
 
 
+def recompute_costs(model: str) -> tuple[int, float]:
+    """Re-price every recorded call from its stored token counts.
+
+    Tokens were always counted exactly; only the rate was missing. So once you
+    supply the rate, the whole history can be costed retroactively — there is no
+    reason to leave past calls blank.
+
+    Returns (calls repriced, new total cost).
+    """
+    data = load_usage()
+    price = price_for(model)
+    if price is None:
+        return 0, 0.0
+
+    def reprice(bucket):
+        cost = compute_cost(model, bucket["input_tokens"],
+                            bucket["cached_input_tokens"], bucket["output_tokens"])
+        bucket["cost_usd"] = cost or 0.0
+        bucket["unpriced_calls"] = 0
+        return bucket["calls"]
+
+    repriced = reprice(data["totals"])
+    for bucket in data.get("by_command", {}).values():
+        reprice(bucket)
+    for bucket in data.get("by_model", {}).values():
+        reprice(bucket)
+
+    save_usage(data)
+    return repriced, data["totals"]["cost_usd"]
+
+
 def format_report() -> str:
     data = load_usage()
     t = data["totals"]

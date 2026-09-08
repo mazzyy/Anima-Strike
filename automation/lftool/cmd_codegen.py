@@ -130,7 +130,7 @@ def _safe_rel(raw: str) -> Path | None:
 
 
 def generate(task: str, focus: list[str] | None = None, godot: bool = False,
-             max_tokens: int = 16000, client: AzureClient | None = None,
+             max_tokens: int = 32000, client: AzureClient | None = None,
              quiet: bool = False) -> Proposal:
     """Ask the model for a change set and write it to automation/out/<slug>/."""
     use_godot = godot or not context.js_available()

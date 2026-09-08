@@ -6,7 +6,7 @@
     "",
     "Ordered so earlier items don't depend on later ones. `files` narrows the",
     "context sent to the model, which is the difference between a 16k-token call",
-    "and a 4k one — leave it off when a change could touch anything.",
+    "and a 4k one \u2014 leave it off when a change could touch anything.",
     "",
     "Add your own:  python3 automation/lf.py roadmap add \"...\" --detail \"...\""
   ],
@@ -16,8 +16,8 @@
       "title": "Add a round timer and best-of-3 rounds",
       "detail": "A 60-second countdown in the HUD. When it hits zero, whoever has more health wins the round. First to two rounds wins the match. Between rounds, reset both fighters to their spawn points and refill health, with a short 'ROUND 2' banner. Show round pips next to each health bar. Add tests for the round-win and timeout-win conditions.",
       "files": [],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
     },
     {
       "id": 2,
@@ -29,8 +29,8 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
     },
     {
       "id": 3,
@@ -41,8 +41,8 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
     },
     {
       "id": 4,
@@ -58,7 +58,8 @@
       "detail": "Let the second fighter be driven by keyboardController('p2') instead of the AI, chosen from the menu. The p2 bindings already exist in input.js. Make sure the AI is not constructed at all in two-player mode so no API calls are made.",
       "files": [
         "little-fighters-js/renderer/src/main.js",
-        "little-fighters-js/renderer/src/input.js"
+        "little-fighters-js/renderer/src/input.js",
+        "little-fighters-js/renderer/src/ai.js"
       ],
       "status": "pending",
       "note": ""
@@ -71,7 +72,9 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/input.js",
-        "little-fighters-js/renderer/src/ai.js"
+        "little-fighters-js/renderer/src/ai.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/tools/fighter.test.mjs"
       ],
       "status": "pending",
       "note": ""
@@ -84,6 +87,7 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/hud.js",
         "little-fighters-js/renderer/src/config.js"
       ],
       "status": "pending",
@@ -95,7 +99,8 @@
       "detail": "Use the Web Audio API to synthesise the sounds rather than shipping audio files: a short noise burst with a low thump for a landed hit, a duller filtered version for a blocked one, a whoosh for a whiffed swing, a thud on landing from a jump. Keep it in a new renderer/src/audio.js with a single play(name) entry point, and a master mute toggle on M.",
       "files": [
         "little-fighters-js/renderer/src/main.js",
-        "little-fighters-js/renderer/src/fighter.js"
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/config.js"
       ],
       "status": "pending",
       "note": ""

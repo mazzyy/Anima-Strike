@@ -30,7 +30,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lftool import cmd_assets, cmd_blender, cmd_build, cmd_codegen, cmd_opponent  # noqa: E402
+from lftool import (cmd_assets, cmd_blender, cmd_build, cmd_codegen,  # noqa: E402
+                    cmd_models, cmd_opponent, cmd_probe)
 from lftool import usage as usage_mod  # noqa: E402
 from lftool.azure_client import AzureClient, AzureError  # noqa: E402
 from lftool.config import PROJECT_ROOT, Config  # noqa: E402
@@ -92,8 +93,16 @@ def cmd_usage(args) -> int:
     if args.game:
         user_dir = cmd_opponent._godot_user_dir()
         game_file = (user_dir / "azure_usage.json") if user_dir else None
-        print("\nIn-game opponent (written by AzureBrain.gd)")
+        print("\nIn-game opponent")
         print("-" * 62)
+        shared = usage_mod.load_usage().get("by_command", {}).get("game")
+        if shared:
+            cost = f"${shared['cost_usd']:,.4f}" if not shared["unpriced_calls"] else "unpriced"
+            print(f"  The three.js game writes into this same ledger, under \"game\":")
+            print(f"    {shared['calls']:,} calls · {shared['total_tokens']:,} tokens · {cost}")
+        else:
+            print("  The three.js game has not called the model yet.")
+        print("\n  Legacy Godot build (separate file, only if you still run it):")
         if game_file and game_file.is_file():
             try:
                 g = json.loads(game_file.read_text(encoding="utf-8"))
@@ -118,8 +127,16 @@ def cmd_price(args) -> int:
     print(f"  {args.model}: ${args.input_per_m}/1M input · ${args.output_per_m}/1M output"
           + (f" · ${args.cached_per_m}/1M cached input" if args.cached_per_m is not None else ""))
     print(f"  Saved to automation/pricing.json")
-    print("  Note: this only affects cost accounting from here on — calls already")
-    print("  recorded keep the cost they were logged with.")
+
+    if args.no_recompute:
+        print("  Existing calls left as they were (--no-recompute).")
+        return 0
+
+    calls, total = usage_mod.recompute_costs(args.model)
+    if calls:
+        print(f"\n  Repriced {calls} previously-unpriced call(s) from their stored")
+        print(f"  token counts — the tokens were always exact, only the rate was missing.")
+        print(f"  Everything spent so far: ${total:,.4f}")
     return 0
 
 
@@ -139,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--blender", help="path to the Blender executable or .app")
     d.set_defaults(func=cmd_doctor)
 
+    md = sub.add_parser("models", help="ask the endpoint which model is deployed")
+    md.set_defaults(func=cmd_models.run)
+
+    pb = sub.add_parser("probe", help="find which part of a request the endpoint rejects")
+    pb.add_argument("--stop-on-first", action="store_true",
+                    help="stop at the first failing case instead of trying them all")
+    pb.set_defaults(func=cmd_probe.run)
+
     u = sub.add_parser("usage", help="show the running token/cost total")
     u.add_argument("--reset", action="store_true", help="clear the running total")
     u.add_argument("--game", action="store_true",
@@ -153,6 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="USD per 1M output tokens")
     pr.add_argument("--cached", dest="cached_per_m", type=float, default=None,
                     help="USD per 1M cached input tokens, if your deployment discounts them")
+    pr.add_argument("--no-recompute", action="store_true",
+                    help="leave already-recorded calls unpriced instead of costing them")
     pr.set_defaults(func=cmd_price)
 
     c = sub.add_parser("codegen", help="propose GDScript changes for review")
@@ -163,7 +190,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="target the original GDScript instead of the JS game")
     c.add_argument("--apply", action="store_true", help="apply immediately after generating")
     c.add_argument("--no-scenes", action="store_true", help="omit .tscn files from the context")
-    c.add_argument("--max-tokens", type=int, default=16000)
+    c.add_argument("--max-tokens", type=int, default=32000)
     c.add_argument("--context-lines", type=int, default=3,
                    help="diff context lines to print (0 = summary only)")
     c.add_argument("--dry-run", action="store_true", help="build the prompt but do not call the API")
@@ -202,11 +229,11 @@ def build_parser() -> argparse.ArgumentParser:
     bd.add_argument("--max", type=int, default=3, help="with --auto, how many items at most")
     bd.add_argument("--repair", type=int, default=1,
                     help="how many times to send failing tests back for a fix (default 1)")
-    bd.add_argument("--keep-going", action="store_true",
-                    help="continue past an item whose tests would not pass")
+    bd.add_argument("--stop-on-block", action="store_true",
+                    help="halt if an item's tests will not pass (default: move on)")
     bd.add_argument("--no-gate", action="store_true",
                     help="build even though the tests cannot run (not recommended)")
-    bd.add_argument("--max-tokens", type=int, default=16000)
+    bd.add_argument("--max-tokens", type=int, default=32000)
     bd.set_defaults(func=cmd_build.run_build)
 
     assets = sub.add_parser("assets", help="the Mixamo -> GLB -> Godot pipeline")

@@ -23,12 +23,13 @@ and the reason is recorded on the roadmap item.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from . import cmd_codegen, context
-from .azure_client import AzureClient
+from .azure_client import AzureClient, AzureError
 from .config import AUTOMATION_DIR, PROJECT_ROOT
 
 ROADMAP = AUTOMATION_DIR / "roadmap.json"
@@ -174,6 +175,78 @@ in ### PLAN.
 """
 
 
+def _is_size_failure(exc: Exception) -> bool:
+    return "PROMPT is what this deployment will not take" in str(exc)
+
+
+# Paths the model might name when it asks for a file it was not given.
+_PATH_RE = re.compile(r"[`\s(]((?:[\w.-]+/)*[\w.-]+\.(?:js|mjs|html|css|json))")
+
+
+def _resolve_requested(reply: str) -> list[str]:
+    """Turn 'please provide renderer/input.js' into a real project path.
+
+    The model only sees the files we send it, so it often names a path by its
+    tail (renderer/input.js) when the real one is nested deeper. Match on the
+    suffix against files that actually exist.
+    """
+    candidates = sorted(
+        str(p.relative_to(PROJECT_ROOT))
+        for p in (PROJECT_ROOT / "little-fighters-js").rglob("*")
+        if p.is_file()
+        and p.suffix in {".js", ".mjs", ".html", ".css"}
+        and "node_modules" not in p.parts
+        and "vendor" not in p.parts
+    )
+    wanted: list[str] = []
+    for raw in set(_PATH_RE.findall(reply)):
+        tail = raw.lstrip("./")
+        hit = next((r for r in candidates if r.endswith(tail)), None)
+        if hit is None:
+            # The model often guesses a shallower path than the real one, so
+            # fall back to the filename when it is unambiguous.
+            base = tail.rsplit("/", 1)[-1]
+            matches = [r for r in candidates if r.rsplit("/", 1)[-1] == base]
+            hit = matches[0] if len(matches) == 1 else None
+        if hit and hit not in wanted:
+            wanted.append(hit)
+    return wanted
+
+
+def _generate_with_context_recovery(task, item, args, client):
+    """Generate, and if the model says it needs more files, give it more files.
+
+    An empty reply almost always means the context was too narrow for the model
+    to change anything safely — which is the model behaving correctly. The right
+    answer is to widen, not to give up.
+    """
+    files = item.get("files") or None
+    proposal = cmd_codegen.generate(
+        task, focus=files, max_tokens=args.max_tokens, client=client)
+    if proposal.ok:
+        return proposal
+
+    asked = _resolve_requested(proposal.reply)
+    if not files and not asked:
+        return proposal        # it already had everything; more context won't help
+
+    # Parsing what it asked for is a nice-to-have; the guarantee is that a second
+    # attempt sees the whole project plus anything it named explicitly.
+    widened = sorted(set((files or []) + asked + context.JS_SOURCES))
+    if asked:
+        print(f"  [adapt] the model wanted {len(asked)} file(s) it had not been shown "
+              f"— resending with those plus the full project ({len(widened)} files)")
+    else:
+        print(f"  [adapt] empty reply on a narrow context — resending with the full "
+              f"project ({len(widened)} files)")
+
+    retry = cmd_codegen.generate(
+        task, focus=widened, max_tokens=args.max_tokens, client=client)
+    if retry.ok:
+        item["files"] = widened            # remember what was actually enough
+    return retry
+
+
 def _next_item(items, wanted_id=None):
     if wanted_id is not None:
         return next((i for i in items if i["id"] == wanted_id), None)
@@ -190,12 +263,12 @@ def _build_one(item, args, client) -> str:
     print(f"#{item['id']}  {item['title']}")
     print("=" * 66)
 
-    proposal = cmd_codegen.generate(
-        task,
-        focus=item.get("files") or None,
-        max_tokens=args.max_tokens,
-        client=client,
-    )
+    try:
+        proposal = _generate_with_context_recovery(task, item, args, client)
+    except AzureError as exc:
+        item["note"] = f"API call failed: {str(exc).splitlines()[0]}"
+        print(f"  ! {exc}")
+        return "blocked"
     if not proposal.ok:
         item["note"] = "model returned no usable file blocks"
         print(f"  ! {item['note']}")
@@ -227,13 +300,17 @@ def _build_one(item, args, client) -> str:
 
         print(f"  sending the failure back for a repair pass ({attempt + 1}/{args.repair})…")
         repair_task = task + "\n\n" + REPAIR_PROMPT.format(errors=_failure_excerpt(output))
-        fix = cmd_codegen.generate(
-            repair_task,
-            focus=[str(f) for f in proposal.files] or None,
-            max_tokens=args.max_tokens,
-            client=client,
-            quiet=True,
-        )
+        try:
+            fix = cmd_codegen.generate(
+                repair_task,
+                focus=[str(f) for f in proposal.files] or None,
+                max_tokens=args.max_tokens,
+                client=client,
+                quiet=True,
+            )
+        except AzureError as exc:
+            print(f"  ! repair call failed: {str(exc).splitlines()[0]}")
+            break
         if not fix.ok:
             print("  ! repair returned nothing usable")
             break
@@ -289,8 +366,8 @@ def run_build(args) -> int:
         save_roadmap(data)
         built += 1
 
-        if item["status"] == "blocked" and not args.keep_going:
-            print("\n  Stopping on a blocked item. Pass --keep-going to continue past it.")
+        if item["status"] == "blocked" and getattr(args, "stop_on_block", False):
+            print("\n  Stopping on the blocked item (--stop-on-block).")
             break
         if args.item is not None:
             break
