@@ -16,11 +16,10 @@
       "temperature": "Unsupported parameter: 'temperature' is not supported with this model. Confirmed by `lf probe`; on large request bodies this arrives as a dropped connection rather than an HTTP 400.",
       "reasoning_model": "Spends output tokens on hidden reasoning (seen: 401 reasoning of 561 output). max_output_tokens must stay generous or replies truncate before any content.",
       "max_output_tokens": "measured by lf calibrate: output allowance is capped independently of prompt size",
-      "total_tokens": "input + max_output_tokens this deployment accepted"
+      "total_tokens": "Removed a guessed combined ceiling of 12,615. lf calibrate measured 20,010 input + 64,000 output accepted, which contradicts it."
     },
     "limits": {
-      "max_output_tokens": 64000,
-      "total_tokens": 12615
+      "max_output_tokens": 64000
     }
   }
 }

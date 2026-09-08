@@ -108,8 +108,9 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     }
   ]
 }

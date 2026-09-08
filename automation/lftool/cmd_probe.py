@@ -60,6 +60,88 @@ def _describe(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+SHAPES = [
+    ("user only, no system text",        "none"),
+    ("system role + user  (what codegen sends today)", "system"),
+    ("developer role + user", "developer"),
+    ("system text folded into the user message", "merged"),
+]
+
+
+def _shape_body(model, shape, system_text, user_text, max_out):
+    if shape == "none":
+        msgs = [{"role": "user", "content": user_text}]
+    elif shape == "system":
+        msgs = [{"role": "system", "content": system_text},
+                {"role": "user", "content": user_text}]
+    elif shape == "developer":
+        msgs = [{"role": "developer", "content": system_text},
+                {"role": "user", "content": user_text}]
+    else:
+        msgs = [{"role": "user", "content": system_text + "\n\n" + user_text}]
+    return {"model": model, "input": msgs, "max_output_tokens": max_out}
+
+
+def run_shape(args) -> int:
+    """Which request SHAPE does this endpoint accept?
+
+    calibrate proved large prompts are fine when sent as a single user message.
+    codegen sends a system message alongside and gets dropped. Same size, same
+    parameters — so the shape is the remaining variable. This tests it directly
+    instead of reasoning about it.
+    """
+    from .cmd_codegen import SYSTEM_JS
+    from . import context
+
+    client = AzureClient(quiet=True)
+    client.cfg.require_key()
+
+    user_text = ("Here is the project:\n\n"
+                 + context.build(include_files=context.JS_SOURCES[:3])
+                 + "\n\nReply with exactly: OK")
+    est = (len(SYSTEM_JS) + len(user_text)) // 4
+
+    print("Testing request SHAPES at a realistic codegen size")
+    print(f"  ~{est:,} tokens, max_output {args.max_out:,}, one attempt each")
+    print("=" * 72)
+
+    results = []
+    for label, shape in SHAPES:
+        body = _shape_body(client.cfg.model, shape, SYSTEM_JS, user_text, args.max_out)
+        client._strip_known_bad(body)
+        print(f"\n  {label}")
+        try:
+            data = client._post(body)
+        except (urllib.error.HTTPError, urllib.error.URLError,
+                http.client.HTTPException, ConnectionError, TimeoutError, OSError) as exc:
+            print(f"    ✗ {_describe(exc)}")
+            results.append((label, shape, False))
+            continue
+        rec = usage_mod.record(data.get("model") or client.cfg.model, "probe", data.get("usage") or {})
+        print(f"    ✓ accepted  ({rec['input_tokens']:,} in / {rec['output_tokens']:,} out)")
+        results.append((label, shape, True))
+
+    print("\n" + "=" * 72)
+    working = [r for r in results if r[2]]
+    if not working:
+        print("  Every shape was refused — the shape is not the variable.")
+        return 1
+    if all(r[2] for r in results):
+        print("  Every shape was accepted. The earlier failures were not about shape;")
+        print("  with the stale size limit removed, codegen may simply work now.")
+        return 0
+
+    print("  Accepted:")
+    for label, shape, _ in working:
+        print(f"    ✓ {label}")
+    print("\n  Refused:")
+    for label, shape, ok in results:
+        if not ok:
+            print(f"    ✗ {label}")
+    print(f"\n  Switch codegen to the '{working[0][1]}' shape.")
+    return 0
+
+
 def run(args) -> int:
     client = AzureClient(quiet=True)
     client.cfg.require_key()

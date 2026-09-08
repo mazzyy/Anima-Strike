@@ -170,6 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="stop at the first failing case instead of trying them all")
     pb.set_defaults(func=cmd_probe.run)
 
+    ps = sub.add_parser("probe-shape",
+                        help="test which request shape (system/developer/merged) is accepted")
+    ps.add_argument("--max-out", type=int, default=32000)
+    ps.set_defaults(func=cmd_probe.run_shape)
+
     u = sub.add_parser("usage", help="show the running token/cost total")
     u.add_argument("--reset", action="store_true", help="clear the running total")
     u.add_argument("--game", action="store_true",

@@ -105,6 +105,16 @@ def run(args) -> int:
         print("  check the key and the deployment with `lf doctor`.")
         return 1
 
+    # A fresh measurement supersedes anything inferred earlier. Leaving a stale
+    # limit in place lets a disproved guess keep throttling every request.
+    from .azure_client import load_caps, CAPS_PATH
+    caps = load_caps()
+    prior = (caps.get(client.cfg.model) or {}).get("limits") or {}
+    if prior:
+        caps[client.cfg.model]["limits"] = {}
+        CAPS_PATH.write_text(json.dumps(caps, indent=2) + "\n", encoding="utf-8")
+        print(f"  (cleared previously recorded limits: {prior})")
+
     outs = [o for _, o in usable]
     totals = [i + o for i, o in usable]
     out_spread = max(outs) - min(outs)

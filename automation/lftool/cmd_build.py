@@ -412,7 +412,10 @@ def run_build(args) -> int:
         if item is None:
             print("\nNothing pending on the roadmap." if built else "\nNo pending items.")
             break
-        if item["status"] != "pending" and args.item is None:
+        # _next_item deliberately returns connection-blocked items for retry,
+        # so "not pending" is not a reason to stop — that check was cancelling
+        # the very resume the line above had just decided on.
+        if item["status"] not in ("pending", "blocked") and args.item is None:
             break
 
         item["status"] = _build_one(item, args, client)
