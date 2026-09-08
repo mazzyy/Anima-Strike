@@ -1,8 +1,8 @@
 /**
- * Boot the game: load assets, build the arena, spawn two fighters, run the loop.
+ * Boot the game: choose a mode, load assets, spawn two fighters, run the loop.
  *
- * Player 1 is you (WASD + JKL). Player 2 is the CPU, driven by the local
- * tactics layer and re-planned by the Azure model when it is configured.
+ * Player 1 uses WASD + JKL. Player 2 is either the CPU or a second local
+ * keyboard player using the existing p2 bindings.
  */
 
 import { loadGameAssets, createAnimator } from './assets.js';
@@ -17,7 +17,46 @@ const canvas = document.getElementById('game');
 const loading = document.getElementById('loading');
 const loadingLabel = document.getElementById('loading-label');
 
+function chooseMode() {
+  loadingLabel.textContent = 'Choose a match mode';
+
+  const menu = document.createElement('div');
+  menu.setAttribute('role', 'group');
+  menu.setAttribute('aria-label', 'Match mode');
+  menu.style.pointerEvents = 'auto';
+  menu.innerHTML = `
+    <p>
+      <button type="button" data-mode="cpu">1 Player — vs CPU</button>
+      <button type="button" data-mode="local">2 Players — Local</button>
+    </p>
+    <p>
+      P1: WASD move · Space jump · Left Shift run · J punch ·
+      K kick · L block · U dash
+    </p>
+    <p>
+      P2: Arrows move · / jump · , run · . punch ·
+      M kick · N block · B dash
+    </p>
+  `;
+  loading.append(menu);
+
+  return new Promise((resolve) => {
+    for (const button of menu.querySelectorAll('button')) {
+      button.addEventListener('click', () => {
+        button.blur();
+        menu.remove();
+        loadingLabel.textContent = 'Loading assets…';
+        resolve(button.dataset.mode);
+      }, { once: true });
+    }
+    menu.querySelector('button').focus();
+  });
+}
+
 async function boot() {
+  const mode = await chooseMode();
+  const localMultiplayer = mode === 'local';
+
   const arena = createArena(canvas);
   const hud = createHUD(document.body);
 
@@ -49,12 +88,26 @@ async function boot() {
     });
   };
 
-  const ai = new AIController({ name: 'CPU', useLLM: true, debug: true });
+  // Do not construct an AI at all in local two-player mode.
+  const ai = localMultiplayer
+    ? null
+    : new AIController({ name: 'CPU', useLLM: true, debug: true });
 
-  const p1 = makeFighter('Player', ARENA.spawnP1, keyboardController('p1'));
-  const p2 = makeFighter('CPU', ARENA.spawnP2, ai);
-  ai.attach(p2, p1);
-  ai.onPlan = () => hud.setPlan(ai);
+  const p1 = makeFighter(
+    localMultiplayer ? 'Player 1' : 'Player',
+    ARENA.spawnP1,
+    keyboardController('p1'),
+  );
+  const p2 = makeFighter(
+    localMultiplayer ? 'Player 2' : 'CPU',
+    ARENA.spawnP2,
+    localMultiplayer ? keyboardController('p2') : ai,
+  );
+
+  if (ai) {
+    ai.attach(p2, p1);
+    ai.onPlan = () => hud.setPlan(ai);
+  }
 
   const world = { fighters: [p1, p2] };
 
@@ -64,30 +117,46 @@ async function boot() {
   p1.health.onChanged = (cur, max) => hud.setHealth('p1', cur / max);
   p2.health.onChanged = (cur, max) => hud.setHealth('p2', cur / max);
 
-  // A blocked hit feeds the AI's mixup logic, same as note_blocked() did.
-  const p1Block = p1.takeHit.bind(p1);
-  p1.takeHit = (...args) => {
-    const wasBlocking = p1.state === State.BLOCK;
-    p1Block(...args);
-    if (wasBlocking && p1.state === State.BLOCK) ai.noteBlocked();
-  };
+  // A blocked hit feeds the AI's mixup logic only in CPU mode.
+  if (ai) {
+    const p1Block = p1.takeHit.bind(p1);
+    p1.takeHit = (...args) => {
+      const wasBlocking = p1.state === State.BLOCK;
+      p1Block(...args);
+      if (wasBlocking && p1.state === State.BLOCK) ai.noteBlocked();
+    };
+  }
 
   let over = false;
   const checkOver = () => {
     if (over) return;
-    if (p1.state === State.KO) { over = true; hud.showBanner('K.O.  —  CPU WINS'); }
-    else if (p2.state === State.KO) { over = true; hud.showBanner('K.O.  —  YOU WIN'); }
+    if (p1.state === State.KO) {
+      over = true;
+      hud.showBanner(localMultiplayer
+        ? 'K.O.  —  PLAYER 2 WINS'
+        : 'K.O.  —  CPU WINS');
+    } else if (p2.state === State.KO) {
+      over = true;
+      hud.showBanner(localMultiplayer
+        ? 'K.O.  —  PLAYER 1 WINS'
+        : 'K.O.  —  YOU WIN');
+    }
   };
 
   // -- brain status + spend readout ---------------------------------------
-  const status = await globalThis.lf?.status?.().catch(() => null);
-  if (!status?.configured) {
-    hud.setBrainStatus(status?.reason ?? 'local tactics only');
+  // Local mode does not call any of the model bridge methods.
+  if (ai) {
+    const status = await globalThis.lf?.status?.().catch(() => null);
+    if (!status?.configured) {
+      hud.setBrainStatus(status?.reason ?? 'local tactics only');
+    }
+    setInterval(async () => {
+      const totals = await globalThis.lf?.usage?.().catch(() => null);
+      hud.setUsage(totals);
+    }, 2000);
+  } else {
+    hud.setBrainStatus('Local two-player — AI disabled');
   }
-  setInterval(async () => {
-    const totals = await globalThis.lf?.usage?.().catch(() => null);
-    hud.setUsage(totals);
-  }, 2000);
 
   // -- loop ----------------------------------------------------------------
   loading.classList.add('done');
@@ -98,10 +167,10 @@ async function boot() {
     const dt = Math.min((now - last) / 1000, 1 / 20);
     last = now;
 
-    ai.update(dt);
+    ai?.update(dt);
     p1.update(dt, world);
     p2.update(dt, world);
-    ai.endFrame();
+    ai?.endFrame();
     endInputFrame();
 
     arena.updateSparks(dt);

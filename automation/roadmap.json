@@ -17,7 +17,8 @@
       "detail": "A 60-second countdown in the HUD. When it hits zero, whoever has more health wins the round. First to two rounds wins the match. Between rounds, reset both fighters to their spawn points and refill health, with a short 'ROUND 2' banner. Show round pips next to each health bar. Add tests for the round-win and timeout-win conditions.",
       "files": [],
       "status": "blocked",
-      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 2,
@@ -30,7 +31,8 @@
         "little-fighters-js/renderer/src/main.js"
       ],
       "status": "blocked",
-      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 3,
@@ -42,7 +44,8 @@
         "little-fighters-js/renderer/src/config.js"
       ],
       "status": "blocked",
-      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 4,
@@ -50,7 +53,8 @@
       "detail": "A title screen before the fight with 'Fight the CPU', 'Two players' and a difficulty selector (which sets the AI's base aggression and think interval). Escape pauses mid-fight with resume and quit-to-menu. The game loop should stop advancing while paused. Keep it all in the existing DOM overlay style rather than rendering menus in three.js.",
       "files": [],
       "status": "blocked",
-      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 5,
@@ -62,7 +66,7 @@
         "little-fighters-js/renderer/src/ai.js"
       ],
       "status": "done",
-      "note": "Add a pre-match menu for CPU or two-player local play. Local mode uses `keyboardController('p2')` and skips AI construction, AI hooks, and all brain status/usage calls. Winner messages reflect the sel"
+      "note": "Add a startup menu for CPU or local two-player matches. Local mode uses `keyboardController('p2')` and never constructs the AI or calls the model bridge, including status and usage polling. CPU behavi"
     },
     {
       "id": 6,
@@ -77,7 +81,8 @@
         "little-fighters-js/tools/fighter.test.mjs"
       ],
       "status": "blocked",
-      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response)."
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 7,
@@ -90,8 +95,9 @@
         "little-fighters-js/renderer/src/hud.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 8,

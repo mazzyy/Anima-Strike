@@ -306,8 +306,19 @@ def _build_one(item, args, client) -> str:
         print(f"  plan: {first[:150]}")
     print(f"  files: {', '.join(str(f) for f in proposal.files)}")
 
-    cmd_codegen.apply_proposal(proposal.out, proposal.files, quiet=True)
+    manifest = cmd_codegen.apply_proposal(proposal.out, proposal.files, quiet=True)
     print(f"  applied {len(proposal.files)} file(s)")
+
+    # Passing tests only mean something if the code actually changed. An apply
+    # that rewrites files with identical bytes would otherwise sail through the
+    # gate and be recorded as a completed feature.
+    if manifest.get("files_changed", 0) == 0:
+        cmd_codegen.revert_proposal(proposal.out, quiet=True)
+        item["note"] = ("the reply changed nothing — the gate would have passed "
+                        "vacuously, so it was rejected")
+        item["blocked_by"] = "api"
+        print(f"  ! {item['note']}")
+        return "blocked"
 
     for attempt in range(args.repair + 1):
         print("  running tests…", end=" ", flush=True)

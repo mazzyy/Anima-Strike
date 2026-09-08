@@ -121,11 +121,58 @@ def _slug(text: str) -> str:
     return (s[:48] or "task") + "-" + datetime.now().strftime("%m%d-%H%M%S")
 
 
+# Where source actually lives. Used to re-root a path the model wrote relative
+# to a subproject instead of the repo.
+SOURCE_ROOTS = ("little-fighters-js", "scripts", "scenes")
+SKIP_PARTS = {"node_modules", "vendor", "assets", ".git", "__pycache__", "out", "dist"}
+
+
+def _project_files() -> list[Path]:
+    out: list[Path] = []
+    for root in SOURCE_ROOTS:
+        base = PROJECT_ROOT / root
+        if not base.is_dir():
+            continue
+        for f in base.rglob("*"):
+            if f.is_file() and not set(f.parts) & SKIP_PARTS and f.suffix in APPLICABLE:
+                out.append(f.relative_to(PROJECT_ROOT))
+    return out
+
+
 def _safe_rel(raw: str) -> Path | None:
-    """Reject absolute paths and anything escaping the project root."""
+    """Map a model-supplied path onto a real project path.
+
+    Models write paths relative to whatever subtree they were shown — a reply
+    saying `renderer/src/main.js` means `little-fighters-js/renderer/src/main.js`
+    here. Taking that literally creates a stray file at the repo root and leaves
+    the real one untouched, which then passes the tests because nothing changed.
+    So: resolve against files that actually exist before treating a path as new.
+    """
     rel = Path(raw.strip().strip("`").lstrip("./"))
     if rel.is_absolute() or ".." in rel.parts:
         return None
+    if (PROJECT_ROOT / rel).is_file():
+        return rel
+
+    existing = _project_files()
+    posix = rel.as_posix()
+
+    # A real file whose path ends with what the model wrote.
+    suffix_hits = [p for p in existing if p.as_posix().endswith("/" + posix)]
+    if len(suffix_hits) == 1:
+        return suffix_hits[0]
+
+    # Failing that, a unique filename match.
+    base_hits = [p for p in existing if p.name == rel.name]
+    if len(base_hits) == 1:
+        return base_hits[0]
+    if len(base_hits) > 1:
+        return None            # ambiguous — refuse rather than guess wrong
+
+    # Genuinely new: put it under the subproject its top folder belongs to.
+    for root in SOURCE_ROOTS:
+        if (PROJECT_ROOT / root / rel).parent.is_dir():
+            return Path(root) / rel
     return rel
 
 
@@ -195,17 +242,24 @@ def apply_proposal(out: Path, files: list[Path], quiet: bool = False) -> dict:
     backup = out / "_backup"
     manifest = {"modified": [], "created": []}
 
+    changed = 0
     for rel in files:
         dest = PROJECT_ROOT / rel
+        new_bytes = (out / rel).read_bytes()
         if dest.is_file():
+            old_bytes = dest.read_bytes()
             bdest = backup / rel
             bdest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(dest, bdest)
             manifest["modified"].append(str(rel))
+            if old_bytes != new_bytes:
+                changed += 1
         else:
             manifest["created"].append(str(rel))
+            changed += 1
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(out / rel, dest)
+    manifest["files_changed"] = changed
 
     (out / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     if not quiet:

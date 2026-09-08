@@ -158,6 +158,7 @@ class AzureClient:
         self._auth_style = "api-key"
         self._canaried = False
         self._adapted_max = False
+        self._waited_for_quota = False
 
     def _log(self, msg: str) -> None:
         if not self.quiet:
@@ -304,6 +305,21 @@ class AzureClient:
                     self._log("  [adapt] the small request was accepted — parameters are "
                               "fine, so this is about size")
 
+                # A tokens-per-minute quota looks exactly like this: a request
+                # whose total exceeds the minute's remaining allowance is killed
+                # at the gateway with no 429 to read. Waiting out the window is
+                # the fix; shrinking the request only helps because a smaller
+                # one fits in what is left. Try the wait first — it preserves
+                # the full prompt, which is what the model actually needs.
+                if size > CANARY_THRESHOLD_BYTES and not self._waited_for_quota:
+                    self._waited_for_quota = True
+                    self._log("  [adapt] large request refused with no error body — this is "
+                              "what a tokens-per-minute quota looks like.")
+                    self._log("          waiting 65s for the window to reset, then retrying "
+                              "at full size")
+                    time.sleep(65)
+                    continue
+
                 current_max = int(body.get("max_output_tokens", 0) or 0)
                 if size > CANARY_THRESHOLD_BYTES and current_max > MIN_OUTPUT_TOKENS:
                     body["max_output_tokens"] = max(current_max // 2, MIN_OUTPUT_TOKENS)
@@ -322,9 +338,14 @@ class AzureClient:
 
                 raise AzureError(
                     f"{last}\n"
-                    "  A small request with the same settings was accepted, and reducing "
-                    f"the output allowance to {body.get('max_output_tokens')} did not help "
-                    "either.\n"
+                    "  A small request was accepted, waiting out a rate-limit window did "
+                    "not help, and\n"
+                    f"  reducing the output allowance to {body.get('max_output_tokens')} did "
+                    "not either.\n"
+                    "  Most likely your deployment's tokens-per-minute quota is too low for "
+                    "requests this size.\n"
+                    "  Azure AI Foundry -> Deployments -> your deployment -> Edit -> Tokens "
+                    "per Minute Rate Limit.\n"
                     "  So the PROMPT is what this deployment will not take. Send fewer "
                     "files:\n"
                     "    lf codegen \"...\" --files <the few files that matter>\n"
