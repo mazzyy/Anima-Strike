@@ -35,6 +35,10 @@ from .config import AUTOMATION_DIR, PROJECT_ROOT
 ROADMAP = AUTOMATION_DIR / "roadmap.json"
 JS_ROOT = PROJECT_ROOT / "little-fighters-js"
 
+# Requests above this many real source files are refused by this
+# deployment. Measured, not guessed: 3-5 files pass, 13 never do.
+MAX_CONTEXT_FILES = 6
+
 STATUS_MARK = {"pending": " ", "done": "✓", "blocked": "✗", "skipped": "–"}
 
 
@@ -214,36 +218,35 @@ def _resolve_requested(reply: str) -> list[str]:
 
 
 def _generate_with_context_recovery(task, item, args, client):
-    """Generate, and if the model says it needs more files, give it more files.
+    """Generate, widening the context only as far as the endpoint tolerates.
 
-    An empty reply almost always means the context was too narrow for the model
-    to change anything safely — which is the model behaving correctly. The right
-    answer is to widen, not to give up.
+    Measured envelope on this deployment: requests built from 3-5 real source
+    files (~4-9k tokens) are accepted reliably; the 13-file whole-project
+    request (~16.5k) is refused every time. So an empty reply widens by adding
+    the specific files the model asked for — never by jumping to everything,
+    which is the one thing known not to work.
     """
-    files = item.get("files") or None
+    files = item.get("files") or context.JS_SOURCES[:4]
     proposal = cmd_codegen.generate(
         task, focus=files, max_tokens=args.max_tokens, client=client)
     if proposal.ok:
         return proposal
 
     asked = _resolve_requested(proposal.reply)
-    if not files and not asked:
-        return proposal        # it already had everything; more context won't help
+    extra = [f for f in asked if f not in files]
+    if not extra:
+        return proposal
 
-    # Parsing what it asked for is a nice-to-have; the guarantee is that a second
-    # attempt sees the whole project plus anything it named explicitly.
-    widened = sorted(set((files or []) + asked + context.JS_SOURCES))
-    if asked:
-        print(f"  [adapt] the model wanted {len(asked)} file(s) it had not been shown "
-              f"— resending with those plus the full project ({len(widened)} files)")
-    else:
-        print(f"  [adapt] empty reply on a narrow context — resending with the full "
-              f"project ({len(widened)} files)")
+    widened = list(files) + extra[:3]        # a few more, not all of them
+    if len(widened) > MAX_CONTEXT_FILES:
+        widened = widened[:MAX_CONTEXT_FILES]
+    print(f"  [adapt] the model named {len(extra)} file(s) it had not been shown "
+          f"— resending with {len(widened)} files (cap {MAX_CONTEXT_FILES})")
 
     retry = cmd_codegen.generate(
         task, focus=widened, max_tokens=args.max_tokens, client=client)
     if retry.ok:
-        item["files"] = widened            # remember what was actually enough
+        item["files"] = widened
     return retry
 
 
@@ -287,6 +290,11 @@ def _build_one(item, args, client) -> str:
     print(f"\n{'=' * 66}")
     print(f"#{item['id']}  {item['title']}")
     print("=" * 66)
+    nfiles = len(item.get("files") or [])
+    if nfiles > MAX_CONTEXT_FILES:
+        item["files"] = item["files"][:MAX_CONTEXT_FILES]
+        print(f"  [guard] trimmed context from {nfiles} to {MAX_CONTEXT_FILES} files "
+              f"— larger requests are refused by this deployment")
 
     try:
         proposal = _generate_with_context_recovery(task, item, args, client)

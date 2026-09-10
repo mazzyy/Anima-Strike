@@ -98,6 +98,43 @@ def animation_clips() -> list[str]:
     return sorted(p.name for p in d.glob("*.glb") if not p.name.startswith("._"))
 
 
+def project_map() -> str:
+    """A one-line-per-file index of the whole codebase.
+
+    The model kept replying "please provide renderer/input.js" instead of
+    writing code, because a handful of full files tells it nothing about what
+    else exists. A map costs a few hundred tokens and removes the reason to
+    ask: it can see every file, its size, and what it exports, even when only
+    a few are included in full.
+    """
+    import re as _re
+    if not JS_ROOT.is_dir():
+        return ""
+    rows: list[str] = []
+    skip = {"node_modules", "vendor", "assets", "dist", "out", "__pycache__"}
+    for p in sorted(JS_ROOT.rglob("*")):
+        if not p.is_file() or p.suffix not in {".js", ".mjs", ".html", ".css"}:
+            continue
+        if set(p.parts) & skip or p.name.startswith("._"):
+            continue
+        rel = p.relative_to(PROJECT_ROOT).as_posix()
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        names = _re.findall(r"^export\s+(?:default\s+)?(?:async\s+)?"
+                            r"(?:class|function|const|let|var)\s+(\w+)",
+                            text, _re.MULTILINE)
+        names += _re.findall(r"^(?:export\s+)?class\s+(\w+)", text, _re.MULTILINE)
+        uniq = sorted(set(names))
+        exports = ("  exports: " + ", ".join(uniq[:8])) if uniq else ""
+        rows.append(f"  {rel}  ({len(text) // 4} tok){exports}")
+    return ("## Every file in the project\n"
+            "(full contents are given below for the ones relevant to this task;\n"
+            " assume the rest exist as described and do not ask for them)\n"
+            + "\n".join(rows))
+
+
 def build(include_files: list[str] | None = None, godot: bool = False,
           file_limit: int = 40_000) -> str:
     """Assemble the shared project-context block."""
@@ -117,6 +154,11 @@ def build(include_files: list[str] | None = None, godot: bool = False,
         pkg = read("little-fighters-js/package.json", 4_000)
         if pkg:
             parts.append("## package.json\n```json\n" + pkg + "\n```")
+
+    if not godot and js_available():
+        m = project_map()
+        if m:
+            parts.append(m)
 
     clips = animation_clips()
     if clips:

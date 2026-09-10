@@ -1,25 +1,27 @@
 {
   "_comment": [
-    "What the client has learned about each deployment, so it stops making",
-    "requests it already knows will be refused. Written automatically \u2014 you",
-    "should not need to edit this.",
+    "What the client has learned about each deployment. Written automatically.",
     "",
-    "Delete an entry to make the client re-test that parameter (for example",
-    "after Azure updates the deployment)."
+    "Size limits were cleared when the deployment/quota changed \u2014 they were",
+    "inferred against a throttled deployment and do not describe a new one.",
+    "'temperature' stays: that is a property of the model, not the deployment."
   ],
   "gpt-6-astra": {
     "unsupported_params": [
       "temperature"
     ],
-    "learned_at": "2026-09-08T01:05:04+00:00",
+    "learned_at": "2026-09-10T11:18:39+00:00",
     "notes": {
-      "temperature": "Unsupported parameter: 'temperature' is not supported with this model. Confirmed by `lf probe`; on large request bodies this arrives as a dropped connection rather than an HTTP 400.",
-      "reasoning_model": "Spends output tokens on hidden reasoning (seen: 401 reasoning of 561 output). max_output_tokens must stay generous or replies truncate before any content.",
-      "max_output_tokens": "measured by lf calibrate: output allowance is capped independently of prompt size",
-      "total_tokens": "Removed a guessed combined ceiling of 12,615. lf calibrate measured 20,010 input + 64,000 output accepted, which contradicts it."
-    },
-    "limits": {
-      "max_output_tokens": 64000
+      "temperature": "Unsupported parameter: 'temperature' is not supported with this model. Confirmed by `lf probe`; on large request bodies this arrives as a dropped connection rather than an HTTP 400."
+    }
+  },
+  "gpt-6-astra-2": {
+    "unsupported_params": [
+      "temperature"
+    ],
+    "learned_at": "2026-09-10T18:48:06+00:00",
+    "notes": {
+      "temperature": "{\n  \"error\": {\n    \"message\": \"Unsupported parameter: 'temperature' is not supported with this model.\",\n    \"type\": \"invalid_request_error\",\n    \"param\": \"temperature\",\n    \"code\": null\n  }\n}"
     }
   }
 }
