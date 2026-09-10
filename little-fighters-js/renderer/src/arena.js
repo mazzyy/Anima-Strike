@@ -8,7 +8,7 @@
  */
 
 import * as THREE from 'three';
-import { ARENA, BODY } from './config.js';
+import { ARENA, BODY, CAMERA } from './config.js';
 
 export function createArena(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -101,6 +101,44 @@ export function createArena(canvas) {
     }
   }
 
+  // -- camera tracking ----------------------------------------------------
+  const restX = ARENA.camera.x;
+  const restY = ARENA.camera.y;
+  const restZ = ARENA.camera.z;
+
+  function updateCamera(dt, fighters) {
+    if (!CAMERA.track || !fighters || fighters.length < 2) return;
+    const [a, b] = fighters;
+
+    const midX = (a.position.x + b.position.x) / 2;
+    const separation = Math.hypot(
+      a.position.x - b.position.x,
+      a.position.z - b.position.z,
+    );
+
+    // Pull back only once they are further apart than a comfortable spacing,
+    // so a normal exchange does not make the camera breathe in and out.
+    const excess = Math.max(separation - CAMERA.restSeparation, 0);
+    const pull = Math.min(excess * CAMERA.zoomPerUnit, CAMERA.maxPull);
+
+    const targetX = THREE.MathUtils.clamp(
+      midX * CAMERA.followX, -CAMERA.maxOffsetX, CAMERA.maxOffsetX);
+    const targetY = restY + pull * 0.35;
+    const targetZ = restZ + pull;
+
+    // Frame-rate independent damping: the fraction of the remaining distance
+    // to cover this frame, derived from a per-second rate.
+    const k = 1 - Math.exp(-CAMERA.damping * dt);
+    camera.position.x += (targetX - camera.position.x) * k;
+    camera.position.y += (targetY - camera.position.y) * k;
+    camera.position.z += (targetZ - camera.position.z) * k;
+    // Pitch and fov deliberately untouched.
+  }
+
+  function resetCamera() {
+    camera.position.set(restX, restY, restZ);
+  }
+
   function resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -114,6 +152,7 @@ export function createArena(canvas) {
   return {
     renderer, scene, camera,
     spawnHitEffect, updateSparks,
+    updateCamera, resetCamera,
     render: () => renderer.render(scene, camera),
   };
 }

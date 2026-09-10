@@ -13,6 +13,8 @@ export function createHUD(root) {
     p2: el('p2-fill'),
   };
   const banner = el('banner');
+  const clock = el('clock');
+  const pips = { p1: el('p1-pips'), p2: el('p2-pips') };
   const planEl = el('ai-plan');
   const usageEl = el('ai-usage');
   const tauntEl = el('ai-taunt');
@@ -24,6 +26,33 @@ export function createHUD(root) {
       const pct = Math.max(0, Math.min(1, fraction)) * 100;
       bar.style.width = `${pct}%`;
       bar.classList.toggle('low', pct <= 30);
+    },
+
+    /** Round clock. Turns urgent under ten seconds. */
+    setClock(seconds) {
+      if (!clock) return;
+      clock.textContent = String(Math.max(0, Math.ceil(seconds))).padStart(2, '0');
+      clock.classList.toggle('urgent', seconds <= 10);
+    },
+
+    /** Filled pips for rounds won, hollow for rounds still to play. */
+    setRounds(who, won, toWin) {
+      const box = pips[who];
+      if (!box) return;
+      box.innerHTML = '';
+      for (let i = 0; i < toWin; i++) {
+        const pip = document.createElement('span');
+        pip.className = i < won ? 'pip won' : 'pip';
+        box.append(pip);
+      }
+    },
+
+    /** A short banner that clears itself — used between rounds. */
+    flashBanner(text, ms = 2000) {
+      banner.textContent = text;
+      banner.classList.add('visible');
+      clearTimeout(banner._timer);
+      banner._timer = setTimeout(() => banner.classList.remove('visible'), ms);
     },
 
     showBanner(text) {

@@ -154,3 +154,43 @@ html, body {
   z-index: 30;
 }
 #banner.visible { opacity: 1; }
+
+/* ---------- round clock + pips ---------- */
+#clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  padding: 2px 14px 0;
+  text-shadow: 0 0 18px rgba(120, 140, 255, 0.45);
+  transition: color 0.2s;
+}
+#clock.urgent {
+  color: var(--low);
+  text-shadow: 0 0 20px rgba(255, 59, 48, 0.6);
+}
+
+.pips {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+.bar.right .pips { justify-content: flex-end; }
+
+.pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: transparent;
+  transition: background 0.25s, box-shadow 0.25s;
+}
+.pip.won {
+  background: var(--p1);
+  box-shadow: 0 0 8px rgba(78, 166, 255, 0.7);
+}
+.bar.right .pip.won {
+  background: var(--p2);
+  box-shadow: 0 0 8px rgba(255, 95, 109, 0.7);
+}

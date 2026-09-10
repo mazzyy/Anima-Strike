@@ -74,6 +74,28 @@ export const ARENA = {
 
 export const HEALTH = { max: 100 };
 
+/** Match structure. A round ends on a KO or when the clock runs out. */
+export const ROUNDS = {
+  seconds: 60,             // clock per round
+  toWin: 2,                // best of three
+  intermissionSeconds: 2.5, // pause between rounds
+};
+
+/**
+ * The camera follows the midpoint between the fighters and eases back as they
+ * separate, so both stay framed. Pitch and field of view never change — only
+ * position — which keeps the arena reading the same as the fixed shot did.
+ */
+export const CAMERA = {
+  track: true,
+  followX: 0.55,        // how much of the midpoint's X to follow (0 = static)
+  maxOffsetX: 2.2,      // never slide further than this from centre
+  zoomPerUnit: 0.55,    // metres of pull-back per metre of separation
+  maxPull: 4.5,
+  restSeparation: 2.5,  // separation at which no pull-back is applied
+  damping: 3.5,         // higher = snappier; this is a per-second rate
+};
+
 /**
  * If the knight runs backwards, flip this to Math.PI. It depends on which way
  * the character mesh faces in its own .glb, which varies with how it was
