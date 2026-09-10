@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import random
 import re
 import time
 import urllib.error
@@ -62,6 +63,10 @@ MIN_OUTPUT_TOKENS = 8000
 DEFAULT_TOTAL_BUDGET = 24000
 
 TRANSIENT_CODES = (408, 409, 429, 500, 502, 503, 504)
+
+# Patience beats cleverness against an intermittent fault. Roughly four minutes
+# of trying in the worst case; most calls get through in the first two or three.
+RETRY_WAITS = (2, 3, 5, 8, 12, 18, 25, 30, 30, 30, 30)
 
 
 class AzureError(RuntimeError):
@@ -208,15 +213,11 @@ class AzureClient:
         if ceiling and int(body.get("max_output_tokens", 0) or 0) > ceiling:
             body["max_output_tokens"] = ceiling
 
-        # Fit the output allowance into whatever the prompt leaves of the
-        # combined budget, rather than asking for a total the endpoint refuses.
-        budget = learned_limit(self.cfg.model, "total_tokens") or DEFAULT_TOTAL_BUDGET
-        est_input = len(json.dumps(body.get("input", "")).encode()) // 4
-        room = max(budget - est_input, MIN_OUTPUT_TOKENS)
-        if int(body.get("max_output_tokens", 0) or 0) > room:
-            body["max_output_tokens"] = room
+        # No combined-budget clamp: calibrate measured 20,010 input alongside a
+        # 64,000 output reservation being accepted, which disproved it. Squeezing
+        # the output allowance only starved a reasoning model of room to answer.
 
-    def _post_with_retries(self, body: dict[str, Any], attempts: int = 7) -> dict[str, Any]:
+    def _post_with_retries(self, body: dict[str, Any], attempts: int = 12) -> dict[str, Any]:
         self._strip_known_bad(body)
         delay = 2.0
         last: Exception | None = None
@@ -282,18 +283,21 @@ class AzureClient:
 
             except (http.client.HTTPException, ConnectionError,
                     TimeoutError, OSError) as e:
-                # urllib does not wrap failures from getresponse(), so these
-                # arrive raw. A large body rejected on a parameter looks exactly
-                # like this: the server answers and closes while we are still
-                # uploading, so there is no response to read.
-                size = len(json.dumps(body).encode())
+                # Measured, not guessed: the identical request that failed six
+                # times in a row was later accepted in full, unchanged. The
+                # connection dies below HTTP — no status, no body — so there is
+                # nothing wrong with the request and nothing to adapt. Shrinking
+                # the prompt or the output allowance only degraded the result.
+                # The correct response to an intermittent transport fault is to
+                # try again, patiently.
                 last = AzureError(
                     f"Connection dropped mid-request ({type(e).__name__}: {e}).")
 
+                # One canary, the first time only: a rejected PARAMETER also
+                # arrives this way on a large body, and that is worth catching.
+                size = len(json.dumps(body).encode())
                 if size > CANARY_THRESHOLD_BYTES and not self._canaried:
                     self._canaried = True
-                    self._log("  [adapt] connection dropped on a large request — "
-                              "re-asking with a tiny one to find out why")
                     param = self._canary(body)
                     if param and param in body:
                         remember_unsupported(self.cfg.model, param,
@@ -302,54 +306,24 @@ class AzureClient:
                         self._log(f"  [adapt] {self.cfg.model} rejects '{param}' — "
                                   f"dropped it and remembered for next time")
                         continue
-                    self._log("  [adapt] the small request was accepted — parameters are "
-                              "fine, so this is about size")
-
-                # A tokens-per-minute quota looks exactly like this: a request
-                # whose total exceeds the minute's remaining allowance is killed
-                # at the gateway with no 429 to read. Waiting out the window is
-                # the fix; shrinking the request only helps because a smaller
-                # one fits in what is left. Try the wait first — it preserves
-                # the full prompt, which is what the model actually needs.
-                if size > CANARY_THRESHOLD_BYTES and not self._waited_for_quota:
-                    self._waited_for_quota = True
-                    self._log("  [adapt] large request refused with no error body — this is "
-                              "what a tokens-per-minute quota looks like.")
-                    self._log("          waiting 65s for the window to reset, then retrying "
-                              "at full size")
-                    time.sleep(65)
-                    continue
-
-                current_max = int(body.get("max_output_tokens", 0) or 0)
-                if size > CANARY_THRESHOLD_BYTES and current_max > MIN_OUTPUT_TOKENS:
-                    body["max_output_tokens"] = max(current_max // 2, MIN_OUTPUT_TOKENS)
-                    self._adapted_max = True
-                    self._log(f"  [adapt] input + output looks over this deployment's "
-                              f"combined limit — output allowance "
-                              f"{current_max} -> {body['max_output_tokens']}")
-                    continue
 
                 if attempt < attempts:
-                    self._log(f"  [retry {attempt}/{attempts - 1}] connection dropped, "
-                              f"waiting {delay:.0f}s")
-                    time.sleep(delay)
-                    delay = min(delay * 2, 30)
+                    wait = RETRY_WAITS[min(attempt - 1, len(RETRY_WAITS) - 1)]
+                    wait += random.uniform(0, wait * 0.3)   # jitter, avoid lockstep
+                    self._log(f"  [retry {attempt}/{attempts - 1}] connection dropped "
+                              f"(intermittent), waiting {wait:.0f}s")
+                    time.sleep(wait)
                     continue
 
                 raise AzureError(
                     f"{last}\n"
-                    "  A small request was accepted, waiting out a rate-limit window did "
-                    "not help, and\n"
-                    f"  reducing the output allowance to {body.get('max_output_tokens')} did "
-                    "not either.\n"
-                    "  Most likely your deployment's tokens-per-minute quota is too low for "
-                    "requests this size.\n"
-                    "  Azure AI Foundry -> Deployments -> your deployment -> Edit -> Tokens "
-                    "per Minute Rate Limit.\n"
-                    "  So the PROMPT is what this deployment will not take. Send fewer "
-                    "files:\n"
-                    "    lf codegen \"...\" --files <the few files that matter>\n"
-                    "    or set \"files\" on the roadmap item (see automation/roadmap.json).")
+                    f"  Gave up after {attempts} attempts. This endpoint drops large\n"
+                    "  requests intermittently — the same request usually succeeds on a\n"
+                    "  later try. Re-running the build normally gets past it.\n"
+                    "  For a permanent fix, the drop happens below HTTP (no status is\n"
+                    "  ever returned), which points at the network path rather than\n"
+                    "  Azure. Try a different network, or lower the interface MTU:\n"
+                    "    networksetup -setMTU Wi-Fi 1400")
 
         raise last or AzureError("request failed")
 

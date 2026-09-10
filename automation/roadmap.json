@@ -16,8 +16,9 @@
       "title": "Add a round timer and best-of-3 rounds",
       "detail": "A 60-second countdown in the HUD. When it hits zero, whoever has more health wins the round. First to two rounds wins the match. Between rounds, reset both fighters to their spawn points and refill health, with a short 'ROUND 2' banner. Show round pips next to each health bar. Add tests for the round-win and timeout-win conditions.",
       "files": [],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 2,
@@ -29,8 +30,9 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 3,
@@ -50,8 +52,9 @@
       "title": "Add a main menu and pause screen",
       "detail": "A title screen before the fight with 'Fight the CPU', 'Two players' and a difficulty selector (which sets the AI's base aggression and think interval). Escape pauses mid-fight with resume and quit-to-menu. The game loop should stop advancing while paused. Keep it all in the existing DOM overlay style rather than rendering menus in three.js.",
       "files": [],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 5,
@@ -77,8 +80,9 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/tools/fighter.test.mjs"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 7,
@@ -91,8 +95,9 @@
         "little-fighters-js/renderer/src/hud.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     },
     {
       "id": 8,
@@ -103,8 +108,9 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: Connection dropped mid-request (RemoteDisconnected: Remote end closed connection without response).",
+      "blocked_by": "api"
     }
   ]
 }
