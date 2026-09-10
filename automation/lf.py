@@ -31,7 +31,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lftool import (cmd_assets, cmd_blender, cmd_build, cmd_codegen,  # noqa: E402
-                    cmd_calibrate, cmd_models, cmd_opponent, cmd_probe)
+                    cmd_bisect, cmd_calibrate, cmd_models, cmd_opponent,
+                    cmd_probe)
 from lftool import usage as usage_mod  # noqa: E402
 from lftool.azure_client import AzureClient, AzureError  # noqa: E402
 from lftool.config import PROJECT_ROOT, Config  # noqa: E402
@@ -155,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("doctor", help="check endpoint, key and model")
     d.add_argument("--blender", help="path to the Blender executable or .app")
     d.set_defaults(func=cmd_doctor)
+
+    bi = sub.add_parser("bisect",
+                        help="find which part of a request the endpoint refuses")
+    bi.add_argument("--item", type=int, default=3, help="roadmap item to rebuild")
+    bi.add_argument("--max-out", type=int, default=8000)
+    bi.set_defaults(func=cmd_bisect.run)
 
     cal = sub.add_parser("calibrate",
                          help="measure the deployment's real request limits and record them")
