@@ -101,6 +101,14 @@ export function createHUD(root) {
     },
 
     setPlan(ai) {
+      // Called with null when a match ends and there is no brain to report on.
+      if (!ai) {
+        planEl.textContent = '—';
+        tauntEl.textContent = '';
+        tauntEl.classList.remove('visible');
+        clearTimeout(tauntEl._timer);
+        return;
+      }
       planEl.textContent = `${ai.stance} · ${ai.preferred} · aggression ${ai.aggression.toFixed(2)}`;
       if (ai.lastTaunt) {
         tauntEl.textContent = `“${ai.lastTaunt}”`;

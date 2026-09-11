@@ -33,6 +33,18 @@ export function endInputFrame() {
   pressedThisFrame.clear();
 }
 
+/**
+ * Drop every key, held ones included.
+ *
+ * This is for menu boundaries, not for frame ends. Opening the pause menu with
+ * D held would otherwise leave the fighter walking right the moment play
+ * resumes, and the Enter that started the match would arrive as a game press.
+ */
+export function clearInput() {
+  held.clear();
+  pressedThisFrame.clear();
+}
+
 /** A controller object a Fighter can read, matching the AI intent shape. */
 export function keyboardController(prefix) {
   const map = INPUT_MAPS[prefix] ?? INPUT_MAPS.p1;

@@ -5,10 +5,14 @@
     "reason lands in `note`.",
     "",
     "Ordered so earlier items don't depend on later ones. `files` narrows the",
-    "context sent to the model, which is the difference between a 16k-token call",
-    "and a 4k one \u2014 leave it off when a change could touch anything.",
     "",
-    "Add your own:  python3 automation/lf.py roadmap add \"...\" --detail \"...\""
+    "Items 9-19 (2026-09-11) expand the game: roster, maps, specials, grabs, air",
+    "combat, wider bindings. Ground rules for every one of them:",
+    "  * Logic goes in a pure module testable under `node --test`; DOM only renders it.",
+    "  * A new module is not finished until main.js (or something it imports) imports",
+    "    it \u2014 tools/wiring.test.mjs fails on orphans.",
+    "  * tools/module-graph.test.mjs links the whole renderer against the VENDORED",
+    "    three.js, so a bad named import fails the gate instead of the app."
   ],
   "items": [
     {
@@ -50,7 +54,7 @@
       "detail": "A title screen before the fight with 'Fight the CPU', 'Two players' and a difficulty selector (which sets the AI's base aggression and think interval). Escape pauses mid-fight with resume and quit-to-menu. The game loop should stop advancing while paused. Keep it all in the existing DOM overlay style rather than rendering menus in three.js.",
       "files": [],
       "status": "done",
-      "note": "Add a DOM-based title/pause menu and a simulation gate that freezes every gameplay update while paused, without stopping rendering. Add configurable difficulty presets and per-controller AI settings; "
+      "note": "Add a DOM-based title/pause menu and a simulation gate that freezes every gameplay update while paused, without stopping rendering. Add configurable difficulty presets and per-controller AI settings;  [correction] menu.js was written but never imported by main.js, so the feature was not in the game. Wired in by hand on 2026-09-11, along with input.clearInput() and a match lifecycle. tools/wiring.test.mjs now fails on any orphaned module."
     },
     {
       "id": 5,
@@ -104,6 +108,147 @@
       ],
       "status": "done",
       "note": "Fix audio unlocking by removing the promise-based resume latch: it can remain set after the context is running and incorrectly prevent a later gesture from resuming suspended audio. Each gesture now r"
+    },
+    {
+      "id": 9,
+      "title": "Give each fighter its own stats",
+      "detail": "Fighter reads speed, health and damage from module constants in config.js, so every fighter is identical and no roster is possible. Add an optional `stats` option to the Fighter constructor \u2014 maxHealth, walkSpeed, runSpeed, jumpSpeed, damageScale, defenceScale \u2014 stored on the instance and read everywhere the constants are read now. Omitting it must reproduce today's numbers exactly, so existing tests keep passing unchanged. damageScale multiplies damage this fighter deals; defenceScale divides damage it receives. Add tests proving: a fighter with damageScale 2 deals double, one with defenceScale 2 takes half, a faster walkSpeed covers more ground in the same dt, and a fighter built with no stats matches the config constants field for field.",
+      "files": [
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 10,
+      "title": "Add a character roster",
+      "detail": "New module renderer/src/characters.js. Export CHARACTERS: at least six fighters, each { id, name, tagline, tint, scale, stats, special }, where stats matches the shape item 9 added and special is a string id for now. Make the archetypes genuinely different \u2014 balanced, heavy and slow with high damage, fast and fragile, long-reach, defensive wall, glass cannon \u2014 by varying the stats, not just the names. Export characterById(id) falling back to the first character, and applyCharacter(model, character) which clones every material it touches before tinting, so two fighters never share a material instance, and applies scale. Pure data plus small functions: no DOM, and no scene access beyond the model passed in. Import it from main.js and use it when building fighters. Tests: ids unique, six or more, stats inside sane bounds, applyCharacter leaves the source material untouched, and two different characters cloned from one model end up with different material colours.",
+      "files": [
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/assets.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 11,
+      "title": "Add four playable arenas",
+      "detail": "New module renderer/src/arenas.js. Four maps built procedurally in three.js with no new art files: a dojo (warm wood floor, paper screens, hanging lanterns), a neon street at night (wet asphalt, coloured signage glow, rain-slick reflections), a temple courtyard (stone flags, pillars, dusk sky), and a rooftop (concrete, distant city lights, high fog). Export MAPS as { id, name, floorColor, skyColor, fog, lights, build(scene) } and buildMap(scene, mapId) returning a dispose() that removes every object and light it added and frees their geometries and materials. createArena(canvas, mapId) selects one. Switching map between matches must leave the scene's child count back where it started. Tests: ids unique, unknown id falls back to the first map, and build-then-dispose restores the exact scene child count and disposes what it created.",
+      "files": [
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 12,
+      "title": "Add a pre-fight selection state machine",
+      "detail": "New module renderer/src/select-state.js, pure and DOM-free so it can be tested in node. Export createSelectState({ characters, maps, twoPlayer }) modelling the flow mode -> P1 character -> P2 character -> map -> ready. In one-player mode the CPU picks its own character, so that step is skipped and filled in automatically. Methods: move(delta) to move the cursor, choose() to confirm the highlighted entry, back() to return to the previous step (and from the first step, to report that the caller should leave the flow), plus getters step, cursor, options, selection and canStart. back() must clear the choice it is undoing. Test it exhaustively: every path through the flow, back() from each step, cursor wrapping at both ends, and that selection is only complete when canStart is true.",
+      "files": [
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 13,
+      "title": "Show character and map select in the menu",
+      "detail": "Render the item-12 state machine in menu.js, between choosing a mode and starting the match: a grid of character cards showing name, tagline and a tint swatch, then a map grid, with the highlighted entry visibly selected. Drive it with arrow keys and Enter as well as the mouse, keep the existing focus trap and Escape behaviour, and add a Back control. onStart must now receive { mode, difficulty, ai, p1Character, p2Character, map } and main.js must use all of them \u2014 build each fighter through applyCharacter with its own stats, and create the arena with the chosen map. Do not put game logic in menu.js; it renders the state machine and nothing more. Every new module must be imported from main.js or something main.js imports, or tools/wiring.test.mjs will fail.",
+      "files": [
+        "little-fighters-js/renderer/src/menu.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 14,
+      "title": "Add a super meter and per-character specials",
+      "detail": "A meter per fighter that fills as it deals and takes damage, capped, and spends in full when a special is thrown. Put the meter maths in its own pure module so it is testable. Give each roster character a distinct special keyed off character.special: a forward projectile, a rising uppercut, a spinning multi-hit kick, a ground pound with a shockwave, a dashing shoulder charge, and a short counter stance that punishes the next hit. Reuse the existing animation clips rather than inventing new ones \u2014 a special is a state with its own timing, damage, reach and cancel rules. Show the meter in the HUD under each health bar. Bind it to a new key per player. Tests: the meter fills and clamps, a special cannot fire below full, firing empties it, and each special's damage and reach differ.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/hud.js",
+        "little-fighters-js/renderer/src/input.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 15,
+      "title": "Add grabs and throws",
+      "detail": "A grab that only connects at close range against a fighter who is not already being thrown, is not invulnerable, and is not mid-special. On connection the victim enters a held state for a short window during which a direction plus attack throws them forward or backward, and no input escapes it except a mash that breaks out if pressed fast enough. A throw deals damage, sets knockdown, and cannot be comboed into another grab immediately. Blocking does not stop a grab \u2014 that is the point of grabs \u2014 but a grab is slower to start than a jab. Bind it to a new key per player. Tests: range gating, break-out on a fast mash, no break-out on a slow one, throw damage and direction, and that a grab cannot chain into a second grab within the cooldown.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/input.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 16,
+      "title": "Add air attacks and juggles",
+      "detail": "Attacks while airborne: a jumping light, a jumping heavy and a diving kick that commits the fighter downward. A fighter hit while airborne enters a juggle state, staying in hitstun and floating briefly so a follow-up can connect, with a per-combo juggle limit so it cannot loop forever and diminishing damage as the juggle count rises. Landing cancels the air state. Tests: an air attack only starts off the floor, juggle count increments per airborne hit, damage scales down as it rises, the limit ends the juggle, and landing resets it.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 17,
+      "title": "Widen the key bindings and generate the on-screen controls",
+      "detail": "INPUT_MAPS needs entries for the new actions \u2014 special, grab, taunt \u2014 for both players, chosen so they are comfortable on one keyboard and never collide with each other or with the mute key. Then stop hand-writing the control hints: the text in index.html is already stale, still promising 'J punch' when J is a light jab and I is a heavy. Generate the on-screen hints from INPUT_MAPS at runtime, with a readable label per physical key code, so the two can never drift apart again. Add a test asserting no key code is bound twice within a player's map, that the two players' maps do not overlap, that neither claims the mute key, and that every action in the map has a label.",
+      "files": [
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/input.js",
+        "little-fighters-js/renderer/src/hud.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/index.html"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 18,
+      "title": "Bring the camera down to the fight",
+      "detail": "The camera sits at y 10, z 9.5, pitched -38 degrees with a 40 degree field of view, which leaves the fighters small in the middle of a mostly empty frame and the top third of the screen showing nothing. Lower it and bring it in so the fighters fill the frame the way they do in a beat-'em-up, keeping the existing follow, separation pull-back and KO push-in behaviour intact. Let each map override the camera so the rooftop can sit lower than the temple. Add a test that the resolved camera for every map keeps both fighters inside the view frustum at maximum separation and at the arena's corners.",
+      "files": [
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 19,
+      "title": "Load a separate model per character, falling back to the knight",
+      "detail": "Right now every character is the same knight with a different tint. Let a character optionally name its own .glb under renderer/assets/characters/, load it once and cache it, and clone per fighter exactly as the knight is cloned. A character with no model, or whose model fails to load, must silently fall back to the tinted knight \u2014 a missing file is never fatal, the same rule the clip loader already follows. Animation clips stay shared, so a model whose skeleton does not match the mixamorig bone names should be rejected at load time and fall back rather than animate wrongly. Tests: fallback on a missing model, fallback on a skeleton mismatch, and that the cache loads a shared model only once.",
+      "files": [
+        "little-fighters-js/renderer/src/assets.js",
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
     }
   ]
 }

@@ -11,7 +11,10 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { SkeletonUtils } from 'three/addons/utils/SkeletonUtils.js';
+// The vendored SkeletonUtils exports bare functions (clone/retarget/
+// retargetClip), not a SkeletonUtils namespace object. Importing the old
+// namespace name is a link-time error that kills the whole module graph.
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { CLIPS } from './config.js';
 
 const loader = new GLTFLoader();
@@ -48,7 +51,7 @@ export async function loadGameAssets(onProgress = () => {}) {
   return {
     /** A fresh, independently-posable copy of the knight. */
     createCharacter() {
-      const root = SkeletonUtils.clone(characterGltf.scene);
+      const root = cloneSkinned(characterGltf.scene);
       root.traverse((obj) => {
         if (obj.isMesh) {
           obj.castShadow = true;

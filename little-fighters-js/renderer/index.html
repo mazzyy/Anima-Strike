@@ -13,6 +13,25 @@
     }
   }
   </script>
+
+  <script>
+    // A module that fails to LINK never executes, so boot()'s own .catch()
+    // can never fire and the screen sits on "loading…" forever with the real
+    // error only in DevTools. These two handlers put it on screen instead.
+    addEventListener('error', (event) => {
+      const label = document.getElementById('loading-label');
+      if (!label) return;
+      const why = event.error?.message || event.message || 'script error';
+      label.textContent = `Failed to start: ${why}`;
+      label.style.color = '#ff8b8b';
+    });
+    addEventListener('unhandledrejection', (event) => {
+      const label = document.getElementById('loading-label');
+      if (!label) return;
+      label.textContent = `Failed to start: ${event.reason?.message ?? event.reason}`;
+      label.style.color = '#ff8b8b';
+    });
+  </script>
 </head>
 <body>
   <canvas id="game"></canvas>
