@@ -199,8 +199,8 @@
         "little-fighters-js/renderer/src/input.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Normalize signed zero in both throw launch velocity components. A backward depth-axis throw currently multiplies zero by a negative direction, producing `-0`; adding positive zero after scaling preser"
     },
     {
       "id": 16,

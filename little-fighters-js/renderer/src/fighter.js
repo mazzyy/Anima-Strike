@@ -10,6 +10,10 @@
  * 'attack' action remains supported for older controllers. Combos belong
  * to the defender and last until hit reactions end or the timer expires.
  *
+ * Grabs have one delayed contact check, then a linked holding/held window.
+ * A fresh direction + punch edge throws; fast button edges escape a hold.
+ * Grab input and held input never enter the ordinary attack buffer.
+ *
  * A missing animation clip is skipped rather than fatal, so the game runs
  * with whatever clips happen to be present.
  */
@@ -24,6 +28,8 @@ export const State = {
   IDLE: 'IDLE', WALK: 'WALK', RUN: 'RUN', JUMP: 'JUMP',
   ATTACK: 'ATTACK', LIGHT_ATTACK: 'LIGHT_ATTACK', HEAVY_ATTACK: 'HEAVY_ATTACK',
   KICK: 'KICK', DROPKICK: 'DROPKICK',
+  GRAB: 'GRAB', GRABBING: 'GRABBING', HELD: 'HELD',
+  THROW: 'THROW', GRAB_RECOVERY: 'GRAB_RECOVERY',
   HIT: 'HIT', BLOCK: 'BLOCK', DASH: 'DASH',
   KNOCKDOWN: 'KNOCKDOWN', GETUP: 'GETUP', KO: 'KO',
 };
@@ -38,6 +44,23 @@ const SWING_STATES = new Set([
   State.ATTACK, State.LIGHT_ATTACK, State.HEAVY_ATTACK,
   State.KICK, State.DROPKICK,
 ]);
+
+const GRAB_STATES = new Set([
+  State.GRAB, State.GRABBING, State.HELD, State.THROW, State.GRAB_RECOVERY,
+]);
+
+// Explicit opt-in excludes invulnerable reactions, airborne states, dash,
+// dropkick, existing holds/throws, and any future special state by default.
+// Roster special identifiers currently have no implemented move states.
+const GRABBABLE_STATES = new Set([
+  State.IDLE, State.WALK, State.RUN, State.BLOCK, State.HIT,
+  State.ATTACK, State.LIGHT_ATTACK, State.HEAVY_ATTACK, State.KICK,
+  State.GRAB, State.GRAB_RECOVERY,
+]);
+
+const BUTTON_ACTIONS = [
+  'attack', 'light', 'heavy', 'kick', 'grab', 'jump', 'dash', 'block',
+];
 
 /** Godot's move_toward: step `delta` from `current` toward `target`, no overshoot. */
 export function moveToward(current, target, delta) {
@@ -127,7 +150,7 @@ export class Fighter {
     this.health = new HealthComponent(this.stats.maxHealth);
     this.health.onDied = () => this.#enterState(State.KO);
 
-    // Per-swing values, set when a swing state is entered.
+    // Per-swing values, set when a swing or throw state is entered.
     this.hitboxLive = false;
     this.attackKnocksDown = false;
     this.attackDamage = COMBAT.attackDamage * this.stats.damageScale;
@@ -153,6 +176,7 @@ export class Fighter {
 
   update(dt, world) {
     this.updateCombatTimers(dt);
+    this.#readInputEdges();
     this.#bufferAttackInput();
     this.stateTime += dt;
 
@@ -171,6 +195,21 @@ export class Fighter {
       case State.KICK:
       case State.DROPKICK:
         this.#processSwing(dt, world); break;
+      case State.GRAB:
+        this.#processGrab(dt, world); break;
+      case State.GRABBING:
+        this.#processHolding(); break;
+      case State.HELD:
+        this.#processHeld(); break;
+      case State.THROW:
+      case State.GRAB_RECOVERY:
+        this.#decelerate(dt);
+        if (this.stateTime >= (
+          this.state === State.THROW
+            ? COMBAT.grab.throwRecoverySeconds
+            : COMBAT.grab.recoverySeconds
+        )) this.#enterState(State.IDLE);
+        break;
       case State.BLOCK:
         this.#processBlock(dt); break;
       case State.DASH:
@@ -209,10 +248,31 @@ export class Fighter {
 
     this.comboTimeLeft = Math.max(0, this.comboTimeLeft - dt);
     if (this.comboTimeLeft === 0) this.comboCount = 0;
+
+    if (this.state !== State.KNOCKDOWN && this.state !== State.GETUP) {
+      this.grabImmunityLeft = Math.max(0, this.grabImmunityLeft - dt);
+    }
   }
 
   /** Round-boundary reset; no animation, controller, or health side effects. */
   resetCombatTracking() {
+    // Round reset may reset the two fighters in either order. Unlink without
+    // changing the partner's state/animation; its own round reset follows.
+    if (this.grabbedFighter?.heldBy === this) {
+      this.grabbedFighter.heldBy = null;
+    }
+    if (this.heldBy?.grabbedFighter === this) {
+      this.heldBy.grabbedFighter = null;
+    }
+    this.grabbedFighter = null;
+    this.heldBy = null;
+    this.grabImmunityLeft = 0;
+    this.grabAttempted = false;
+    this.grabStartup = 0;
+    this.grabYaw = 0;
+    this.mashTimes = [];
+    this.inputEdges = new Set();
+
     this.bufferedAttack = null;
     this.attackBufferLeft = 0;
     this.comboCount = 0;
@@ -227,10 +287,20 @@ export class Fighter {
 
   // -- input buffering ----------------------------------------------------
 
-  #bufferAttackInput() {
+  #readInputEdges() {
+    this.inputEdges.clear();
     if (this.state === State.KO) return;
 
-    // Read each edge once, even for controllers whose pressed() consumes it.
+    // Snapshot once: consuming controllers and keyboard controllers behave
+    // identically when an edge is inspected by buffering and state logic.
+    for (const action of BUTTON_ACTIONS) {
+      if (this.controller?.pressed?.(action)) this.inputEdges.add(action);
+    }
+  }
+
+  #bufferAttackInput() {
+    if (this.state === State.KO || GRAB_STATES.has(this.state)) return;
+
     // The latest frame replaces the pending action. Simultaneous presses
     // resolve heavy > light > legacy attack > kick. Holds never refresh it.
     const heavy = this.#pressed('heavy');
@@ -269,6 +339,10 @@ export class Fighter {
     const dir = this.#moveInput();
     const moving = dir.x !== 0 || dir.y !== 0;
 
+    if (this.onFloor && this.#pressed('grab')) {
+      this.#enterState(State.GRAB);
+      return;
+    }
     if (this.#held('block')) {
       this.velocity.x = 0; this.velocity.z = 0;
       this.#enterState(State.BLOCK);
@@ -370,6 +444,10 @@ export class Fighter {
 
   #processBlock(dt) {
     this.#decelerate(dt);
+    if (this.onFloor && this.#pressed('grab')) {
+      this.#enterState(State.GRAB);
+      return;
+    }
     if (!this.#held('block')) this.#enterState(State.IDLE);
   }
 
@@ -378,6 +456,144 @@ export class Fighter {
     this.velocity.z = this.dashDir.z * COMBAT.dashSpeed;
     this.#faceDirection(this.dashDir.x, this.dashDir.z, dt);
     if (this.stateTime >= COMBAT.dashDuration) this.#enterState(State.IDLE);
+  }
+
+  // -- grabs --------------------------------------------------------------
+
+  #canGrab(other) {
+    if (
+      other === this
+      || !this.onFloor
+      || !other.onFloor
+      || !other.health.isAlive()
+      || other.invulnerable
+      || other.grabImmunityLeft > 0
+      || other.heldBy
+      || other.grabbedFighter
+      || !GRABBABLE_STATES.has(other.state)
+    ) return false;
+
+    const grab = COMBAT.grab;
+    if (Math.abs(this.position.y - other.position.y) > grab.heightTolerance) return false;
+
+    const dx = other.position.x - this.position.x;
+    const dz = other.position.z - this.position.z;
+    if (Math.hypot(dx, dz) > grab.range) return false;
+
+    const s = Math.sin(this.grabYaw);
+    const c = Math.cos(this.grabYaw);
+    const forward = dx * s + dz * c;
+    const sideways = dx * c - dz * s;
+    return forward > 0 && Math.abs(sideways) <= grab.halfWidth;
+  }
+
+  #processGrab(dt, world) {
+    this.#decelerate(dt);
+    if (this.grabAttempted || this.stateTime < this.grabStartup) return;
+
+    // One contact check at the end of startup, never a lingering grab box.
+    this.grabAttempted = true;
+    const victim = world.fighters.find((other) => this.#canGrab(other));
+    if (!victim) {
+      this.onSound('whiff');
+      this.#enterState(State.GRAB_RECOVERY);
+      return;
+    }
+
+    this.grabbedFighter = victim;
+    victim.heldBy = this;
+    this.#enterState(State.GRABBING);
+    victim.#enterState(State.HELD);
+  }
+
+  #processHolding() {
+    this.velocity.set(0, 0, 0);
+    const victim = this.grabbedFighter;
+    if (!victim || victim.heldBy !== this || victim.state !== State.HELD) {
+      this.#enterState(State.GRAB_RECOVERY);
+      return;
+    }
+
+    if (this.stateTime >= COMBAT.grab.holdSeconds) {
+      this.#enterState(State.GRAB_RECOVERY);
+      return;
+    }
+
+    // No buffer here: pressing attack without a direction does not arm a
+    // later throw, and holding attack across the connection does not throw.
+    const punch = this.#pressed('attack') || this.#pressed('light') || this.#pressed('heavy');
+    if (!punch) return;
+
+    const dir = this.#moveInput();
+    const forward = dir.x * Math.sin(this.grabYaw) + dir.y * Math.cos(this.grabYaw);
+    if (Math.abs(forward) < COMBAT.grab.directionThreshold) return;
+
+    const sign = Math.sign(forward);
+    const throwX = Math.sin(this.grabYaw) * sign;
+    const throwZ = Math.cos(this.grabYaw) * sign;
+
+    // Exiting GRABBING unlinks both fighters and releases the victim before
+    // takeHit. Thus block cannot reduce throw damage, and main.js still sees
+    // the ordinary damage/KO/sound/effect path with the real attacker position.
+    this.#enterState(State.THROW);
+    const outcome = victim.takeHit(
+      this.attackDamage, this.position, this.attackKnocksDown, this.attackKnockback,
+    );
+    if (outcome === 'hit') {
+      // Backward throws can multiply an exact zero axis by -1. Adding +0
+      // canonicalizes signed zero after scaling without changing nonzero motion.
+      victim.velocity.x = throwX * this.attackKnockback + 0;
+      victim.velocity.z = throwZ * this.attackKnockback + 0;
+      this.swingConnected = true;
+    }
+  }
+
+  #processHeld() {
+    this.velocity.set(0, 0, 0);
+    if (
+      !this.heldBy
+      || this.heldBy.grabbedFighter !== this
+      || this.heldBy.state !== State.GRABBING
+    ) {
+      this.#enterState(State.IDLE);
+      return;
+    }
+
+    // Sliding window of real edges, not a lifetime count or held buttons.
+    // A chord earns only one credit, so one accidental simultaneous press
+    // cannot break the hold.
+    const cutoff = this.stateTime - COMBAT.grab.mashWindowSeconds;
+    this.mashTimes = this.mashTimes.filter((time) => time >= cutoff);
+    if (COMBAT.grab.mashActions.some((action) => this.#pressed(action))) {
+      this.mashTimes.push(this.stateTime);
+    }
+    if (this.mashTimes.length >= COMBAT.grab.mashPresses) {
+      this.#enterState(State.IDLE);
+    }
+  }
+
+  /** Called only when leaving a linked state; references clear before callbacks. */
+  #releaseGrab() {
+    const victim = this.grabbedFighter;
+    const holder = this.heldBy;
+    this.grabbedFighter = null;
+    this.heldBy = null;
+    this.mashTimes = [];
+
+    if (victim) {
+      victim.heldBy = null;
+      victim.grabImmunityLeft = Math.max(
+        victim.grabImmunityLeft, COMBAT.grab.immunitySeconds,
+      );
+      if (victim.state === State.HELD) victim.#enterState(State.IDLE);
+    }
+    if (holder) {
+      holder.grabbedFighter = null;
+      this.grabImmunityLeft = Math.max(
+        this.grabImmunityLeft, COMBAT.grab.immunitySeconds,
+      );
+      if (holder.state === State.GRABBING) holder.#enterState(State.GRAB_RECOVERY);
+    }
   }
 
   // -- combat -------------------------------------------------------------
@@ -516,9 +732,10 @@ export class Fighter {
       this.onFloor = false;
     }
 
-    // Fighters push each other apart rather than overlapping.
+    // Fighters push each other apart rather than overlapping. A linked pair
+    // stays in its contact pose rather than being separated by this solver.
     for (const other of world.fighters) {
-      if (other === this) continue;
+      if (other === this || other === this.heldBy || other === this.grabbedFighter) continue;
       const dx = this.position.x - other.position.x;
       const dz = this.position.z - other.position.z;
       const dist = Math.hypot(dx, dz);
@@ -553,6 +770,13 @@ export class Fighter {
     // Don't restart a looping animation every frame.
     if (next === this.state && LOOPING_STATES.has(next)) return;
 
+    // Hit interruption, death, timeout, mash escape, and throws all unlink
+    // through the same path. Never leave a partner stuck in a held state.
+    if (
+      (this.state === State.GRABBING && next !== State.GRABBING)
+      || (this.state === State.HELD && next !== State.HELD)
+    ) this.#releaseGrab();
+
     // Recovery ends the combo even when the inter-hit timer has time left.
     // KNOCKDOWN -> GETUP is not recovery; GETUP must finish first.
     if (next === State.IDLE && (this.state === State.HIT || this.state === State.GETUP)) {
@@ -562,13 +786,17 @@ export class Fighter {
 
     // Getting interrupted discards earlier offensive intent. Fresh presses
     // near the end of a reaction can still buffer a recovery attack.
-    if (next === State.HIT || next === State.KNOCKDOWN || next === State.KO) {
+    if (
+      next === State.HIT || next === State.KNOCKDOWN || next === State.KO
+      || GRAB_STATES.has(next)
+    ) {
       this.bufferedAttack = null;
       this.attackBufferLeft = 0;
     }
 
     this.state = next;
     this.stateTime = 0;
+    if (!SWING_STATES.has(next)) this.hitboxLive = false;
 
     const punch = next === State.LIGHT_ATTACK
       ? COMBAT.lightAttack
@@ -576,6 +804,35 @@ export class Fighter {
     const speed = punch
       ? punch.speed
       : next === State.KNOCKDOWN ? COMBAT.knockdownSpeed : 1;
+
+    if (next === State.GRAB) {
+      const jabClip = STATE_CLIP[State.LIGHT_ATTACK];
+      const jabLength = this.animator.has(jabClip)
+        ? this.animator.length(jabClip)
+        : COMBAT.attackDuration;
+      this.grabStartup = Math.max(
+        COMBAT.grab.startupSeconds,
+        jabLength / COMBAT.lightAttack.speed * COMBAT.hitWindowStart
+          + COMBAT.grab.jabStartupMargin,
+      );
+      this.grabAttempted = false;
+      this.grabYaw = this.rotationY;
+      this.velocity.x = 0;
+      this.velocity.z = 0;
+    }
+
+    if (next === State.GRABBING || next === State.HELD) {
+      this.velocity.set(0, 0, 0);
+      this.mashTimes = [];
+    }
+
+    if (next === State.THROW) {
+      this.attackDamage = COMBAT.grab.damage * this.stats.damageScale;
+      this.attackKnockback = COMBAT.grab.knockback;
+      this.attackKnocksDown = true;
+      this.swingConnected = false;
+      this.alreadyHit.clear();
+    }
 
     if (SWING_STATES.has(next)) {
       let fallback = COMBAT.attackDuration;
@@ -637,6 +894,6 @@ export class Fighter {
     return len > 1 ? { x: v.x / len, y: v.y / len } : v;
   }
 
-  #pressed(action) { return Boolean(this.controller?.pressed?.(action)); }
+  #pressed(action) { return this.inputEdges.has(action); }
   #held(action) { return Boolean(this.controller?.held?.(action)); }
 }

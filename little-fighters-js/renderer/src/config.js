@@ -61,6 +61,29 @@ export const COMBAT = {
   knockdownDuration: 0.8,
   getupDuration: 0.6,
   knockdownSpeed: 1.8,
+
+  grab: {
+    // Center-to-center ground-plane distance; never scaled by roster reach.
+    range: 1.25,
+    halfWidth: 0.6,
+    heightTolerance: 0.25,
+    startupSeconds: 0.3,
+    // Startup is also at least the loaded light jab's startup plus this.
+    jabStartupMargin: 0.08,
+    recoverySeconds: 0.3,
+    holdSeconds: 1.1,
+    throwRecoverySeconds: 0.4,
+    damage: 20,
+    knockback: 12,
+    directionThreshold: 0.35,
+    // Applied on every release. Paused during knockdown/getup so even long
+    // animation clips leave a guaranteed no-regrab window after recovery.
+    immunitySeconds: 1.0,
+    mashWindowSeconds: 0.45,
+    mashPresses: 5,
+    // At most one mash credit per simulation frame, even for button chords.
+    mashActions: ['attack', 'light', 'heavy', 'kick', 'grab', 'jump', 'dash', 'block'],
+  },
 };
 
 /** Durations use wall-clock seconds, never the scaled simulation clock. */
@@ -128,12 +151,12 @@ export const INPUT_MAPS = {
   p1: {
     up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD',
     jump: 'Space', run: 'ShiftLeft', light: 'KeyJ', heavy: 'KeyI',
-    kick: 'KeyK', block: 'KeyL', dash: 'KeyU',
+    kick: 'KeyK', block: 'KeyL', dash: 'KeyU', grab: 'KeyO',
   },
   p2: {
     up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
     jump: 'Slash', run: 'Comma', light: 'Period', heavy: 'KeyH',
-    kick: 'KeyV', block: 'KeyN', dash: 'KeyB',
+    kick: 'KeyV', block: 'KeyN', dash: 'KeyB', grab: 'KeyC',
   },
 };
 
@@ -174,7 +197,6 @@ export const MAP_ART = {
   radialSegments: 16,
   sphereRows: 10,
   boundaryWidth: 0.035,
-  boundaryOpacity: 0.4,
   shadow: {
     size: 2048,
     near: 0.5,
@@ -532,7 +554,7 @@ export const CLIPS = [
   'hit', 'block', 'dash', 'knockdown', 'getup', 'death',
 ];
 
-/** Which clip each state plays. Both punch variants currently share a clip. */
+/** Grab poses reuse existing clips; their gameplay timers are independent. */
 export const STATE_CLIP = {
   IDLE: 'idle',
   WALK: 'walk',
@@ -543,6 +565,11 @@ export const STATE_CLIP = {
   HEAVY_ATTACK: 'punch',
   KICK: 'kick',
   DROPKICK: 'dropkick',
+  GRAB: 'punch',
+  GRABBING: 'block',
+  HELD: 'hit',
+  THROW: 'punch',
+  GRAB_RECOVERY: 'idle',
   HIT: 'hit',
   BLOCK: 'block',
   DASH: 'dash',
@@ -551,7 +578,9 @@ export const STATE_CLIP = {
   KO: 'death',
 };
 
-export const LOOPING_STATES = new Set(['IDLE', 'WALK', 'RUN', 'BLOCK']);
+export const LOOPING_STATES = new Set([
+  'IDLE', 'WALK', 'RUN', 'BLOCK', 'GRABBING', 'HELD',
+]);
 
 export const AI = {
   baseAggression: 0.5,
