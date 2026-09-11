@@ -1,8 +1,6 @@
 /**
- * Health bars, the KO banner, and a small readout of what the Azure brain is
- * doing and what it has spent. That last part matters: the opponent calls the
- * model on a timer, so the cost should be visible while you play rather than
- * discovered afterwards.
+ * Health bars, defender combo counters, the KO banner, and a small readout
+ * of what the Azure brain is doing and what it has spent.
  */
 
 export function createHUD(root) {
@@ -19,6 +17,34 @@ export function createHUD(root) {
   const usageEl = el('ai-usage');
   const tauntEl = el('ai-taunt');
 
+  // Insert beside each health track, not inside the shrinking fill.
+  // Keep this self-contained so the existing HTML/CSS need no changes.
+  const combos = {};
+  for (const who of ['p1', 'p2']) {
+    const track = bars[who]?.parentElement;
+    if (!track) continue;
+
+    let counter = el(`${who}-combo`);
+    if (!counter) {
+      counter = root.ownerDocument.createElement('div');
+      counter.id = `${who}-combo`;
+      counter.className = 'combo-counter';
+      counter.title = 'Consecutive hits received';
+      counter.hidden = true;
+      Object.assign(counter.style, {
+        color: '#ffd94d',
+        fontSize: '12px',
+        fontWeight: '700',
+        lineHeight: '1.4',
+        marginTop: '4px',
+        textAlign: who === 'p2' ? 'right' : 'left',
+        pointerEvents: 'none',
+      });
+      track.after(counter);
+    }
+    combos[who] = counter;
+  }
+
   return {
     setHealth(who, fraction) {
       const bar = bars[who];
@@ -26,6 +52,16 @@ export function createHUD(root) {
       const pct = Math.max(0, Math.min(1, fraction)) * 100;
       bar.style.width = `${pct}%`;
       bar.classList.toggle('low', pct <= 30);
+    },
+
+    /** Counts belong to the fighter receiving the hits, not the attacker. */
+    setCombo(who, count) {
+      const counter = combos[who];
+      if (!counter) return;
+      const visible = count >= 2;
+      const text = visible ? `${count} HIT COMBO` : '';
+      if (counter.textContent !== text) counter.textContent = text;
+      counter.hidden = !visible;
     },
 
     /** Round clock. Turns urgent under ten seconds. */

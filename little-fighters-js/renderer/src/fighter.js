@@ -1,12 +1,14 @@
 /**
  * The fighter: a faithful port of Fighter.gd's state machine.
  *
- * Everything that made the Godot version feel the way it did is preserved —
- * the thirteen states, the attack timing windows measured as a fraction of the
- * animation clip, the drop-kick lunge that stops on impact, directional
- * blocking, knockdown/getup. What changed is the plumbing: Godot's Area3D
- * overlap callbacks become an explicit hitbox test each frame, and
- * move_and_slide becomes integrate-then-resolve.
+ * Attack timing windows are measured as a fraction of the animation clip,
+ * adjusted by playback speed. Godot's Area3D overlap callbacks become an
+ * explicit hitbox test each frame, and move_and_slide becomes
+ * integrate-then-resolve.
+ *
+ * Light/heavy/kick presses use a single short-lived buffer. The legacy
+ * 'attack' action remains supported for older controllers. Combos belong
+ * to the defender and last until hit reactions end or the timer expires.
  *
  * A missing animation clip is skipped rather than fatal, so the game runs
  * with whatever clips happen to be present.
@@ -20,12 +22,22 @@ import {
 
 export const State = {
   IDLE: 'IDLE', WALK: 'WALK', RUN: 'RUN', JUMP: 'JUMP',
-  ATTACK: 'ATTACK', KICK: 'KICK', DROPKICK: 'DROPKICK',
+  ATTACK: 'ATTACK', LIGHT_ATTACK: 'LIGHT_ATTACK', HEAVY_ATTACK: 'HEAVY_ATTACK',
+  KICK: 'KICK', DROPKICK: 'DROPKICK',
   HIT: 'HIT', BLOCK: 'BLOCK', DASH: 'DASH',
   KNOCKDOWN: 'KNOCKDOWN', GETUP: 'GETUP', KO: 'KO',
 };
 
-const SWING_STATES = new Set([State.ATTACK, State.KICK, State.DROPKICK]);
+const PUNCH_STATE_FOR = {
+  attack: State.ATTACK,
+  light: State.LIGHT_ATTACK,
+  heavy: State.HEAVY_ATTACK,
+};
+
+const SWING_STATES = new Set([
+  State.ATTACK, State.LIGHT_ATTACK, State.HEAVY_ATTACK,
+  State.KICK, State.DROPKICK,
+]);
 
 /** Godot's move_toward: step `delta` from `current` toward `target`, no overshoot. */
 export function moveToward(current, target, delta) {
@@ -68,13 +80,17 @@ export class Fighter {
    * @param {object}  opts.spawn            { x, y, z }
    * @param {string}  opts.name
    * @param {(pos: THREE.Vector3, color: number) => void} [opts.onHitEffect]
+   * @param {(name: string) => void} [opts.onSound]
    */
-  constructor({ model, animator, controller, spawn, name = 'Fighter', onHitEffect }) {
+  constructor({
+    model, animator, controller, spawn, name = 'Fighter', onHitEffect, onSound,
+  }) {
     this.name = name;
     this.model = model;
     this.animator = animator;
     this.controller = controller;
     this.onHitEffect = onHitEffect ?? (() => {});
+    this.onSound = onSound ?? (() => {});
 
     this.position = new THREE.Vector3(spawn.x, spawn.y, spawn.z);
     this.velocity = new THREE.Vector3();
@@ -96,8 +112,12 @@ export class Fighter {
     this.attackKnockback = COMBAT.knockbackForce;
     this.dropkickConnected = false;
     this.swingLength = COMBAT.attackDuration;
+    this.swingConnected = false;
+    this.swingSoundPlayed = false;
     this.reactionLength = COMBAT.hitStun;
     this.alreadyHit = new Set();
+
+    this.resetCombatTracking();
 
     this.dashDir = new THREE.Vector3();
     this.onStateChanged = null;
@@ -110,6 +130,8 @@ export class Fighter {
   // -- main loop ----------------------------------------------------------
 
   update(dt, world) {
+    this.updateCombatTimers(dt);
+    this.#bufferAttackInput();
     this.stateTime += dt;
 
     if (!this.onFloor) this.velocity.y -= MOVEMENT.gravity * dt;
@@ -122,6 +144,8 @@ export class Fighter {
       case State.JUMP:
         this.#processJump(dt); break;
       case State.ATTACK:
+      case State.LIGHT_ATTACK:
+      case State.HEAVY_ATTACK:
       case State.KICK:
       case State.DROPKICK:
         this.#processSwing(dt, world); break;
@@ -145,9 +169,32 @@ export class Fighter {
         this.#decelerate(dt); break;
     }
 
+    // A move/reaction may have finished this frame. Consume immediately,
+    // without a mandatory idle frame or a second read of pressed().
+    if (this.state === State.IDLE && !this.#held('block')) {
+      this.#tryBufferedAttack(this.#moveInput());
+    }
+
     this.#integrate(dt, world);
     this.animator.update(dt);
     this.syncModel();
+  }
+
+  /** Also called during intermissions, when simulation/input are stopped. */
+  updateCombatTimers(dt) {
+    this.attackBufferLeft = Math.max(0, this.attackBufferLeft - dt);
+    if (this.attackBufferLeft === 0) this.bufferedAttack = null;
+
+    this.comboTimeLeft = Math.max(0, this.comboTimeLeft - dt);
+    if (this.comboTimeLeft === 0) this.comboCount = 0;
+  }
+
+  /** Round-boundary reset; no animation, controller, or health side effects. */
+  resetCombatTracking() {
+    this.bufferedAttack = null;
+    this.attackBufferLeft = 0;
+    this.comboCount = 0;
+    this.comboTimeLeft = 0;
   }
 
   /** Position/rotation from simulation state onto the three.js object. */
@@ -156,7 +203,45 @@ export class Fighter {
     this.model.rotation.y = this.rotationY + MODEL_YAW_OFFSET;
   }
 
-  // -- state behaviours (ported 1:1) --------------------------------------
+  // -- input buffering ----------------------------------------------------
+
+  #bufferAttackInput() {
+    if (this.state === State.KO) return;
+
+    // Read each edge once, even for controllers whose pressed() consumes it.
+    // The latest frame replaces the pending action. Simultaneous presses
+    // resolve heavy > light > legacy attack > kick. Holds never refresh it.
+    const heavy = this.#pressed('heavy');
+    const light = this.#pressed('light');
+    const attack = this.#pressed('attack');
+    const kick = this.#pressed('kick');
+    if (!heavy && !light && !attack && !kick) return;
+
+    this.bufferedAttack = heavy ? 'heavy' : light ? 'light' : attack ? 'attack' : 'kick';
+    this.attackBufferLeft = COMBAT.attackBufferSeconds;
+  }
+
+  #tryBufferedAttack(dir, airborne = false) {
+    const action = this.bufferedAttack;
+    if (!action) return false;
+    const punchState = PUNCH_STATE_FOR[action];
+    if (airborne && !punchState) return false;
+
+    this.bufferedAttack = null;
+    this.attackBufferLeft = 0;
+
+    if (punchState) {
+      this.#enterState(punchState);
+      if (airborne) this.attackKnocksDown = true;
+    } else {
+      // Resolve run/movement at execution time, just like a fresh kick.
+      const moving = dir.x !== 0 || dir.y !== 0;
+      this.#enterState(this.#held('run') && moving ? State.DROPKICK : State.KICK);
+    }
+    return true;
+  }
+
+  // -- state behaviours ---------------------------------------------------
 
   #processGrounded(dt) {
     const dir = this.#moveInput();
@@ -167,12 +252,8 @@ export class Fighter {
       this.#enterState(State.BLOCK);
       return;
     }
-    if (this.#pressed('attack')) { this.#enterState(State.ATTACK); return; }
-    if (this.#pressed('kick')) {
-      // Running + kick is the drop kick; otherwise a normal kick.
-      this.#enterState(this.#held('run') && moving ? State.DROPKICK : State.KICK);
-      return;
-    }
+    if (this.#tryBufferedAttack(dir)) return;
+
     if (this.#pressed('dash')) {
       this.dashDir.set(dir.x, 0, dir.y);
       if (moving) this.dashDir.normalize();
@@ -218,11 +299,7 @@ export class Fighter {
       this.#faceDirection(dir.x, dir.y, dt);
     }
 
-    if (this.#pressed('attack')) {
-      this.#enterState(State.ATTACK);
-      this.attackKnocksDown = true;   // air attacks put them on the ground
-      return;
-    }
+    if (this.#tryBufferedAttack(dir, true)) return;
 
     if (this.onFloor && this.velocity.y <= 0) this.#enterState(State.IDLE);
   }
@@ -252,6 +329,16 @@ export class Fighter {
       if (live) this.alreadyHit.clear();
     }
     if (live) this.#resolveHits(world);
+
+    // Wait until contact is no longer possible: never play a whoosh and then
+    // a hit for the same swing. Missing clips still use the fallback window.
+    if (
+      !this.swingSoundPlayed
+      && (this.stateTime > activeEnd || this.stateTime >= this.swingLength)
+    ) {
+      this.swingSoundPlayed = true;
+      if (!this.swingConnected) this.onSound('whiff');
+    }
 
     if (this.stateTime >= this.swingLength) {
       this.hitboxLive = false;
@@ -284,7 +371,10 @@ export class Fighter {
       if (!this.#hitboxOverlaps(other)) continue;
 
       this.alreadyHit.add(other);
-      other.takeHit(this.attackDamage, this.position, this.attackKnocksDown, this.attackKnockback);
+      const outcome = other.takeHit(
+        this.attackDamage, this.position, this.attackKnocksDown, this.attackKnockback,
+      );
+      if (outcome) this.swingConnected = true;
       this.onAttackConnected();
     }
   }
@@ -317,7 +407,7 @@ export class Fighter {
     return distSq <= BODY.hurtRadius ** 2;
   }
 
-  /** Ported from take_hit(). */
+  /** Ported from take_hit(); returns 'hit'/'block', or undefined if ignored. */
   takeHit(damage, fromPosition, knocksDown = false, knockback = COMBAT.knockbackForce) {
     if (this.state === State.KO || this.state === State.KNOCKDOWN || this.state === State.GETUP) {
       return;
@@ -339,7 +429,15 @@ export class Fighter {
     const finalDamage = blocked
       ? Math.round(damage * COMBAT.blockDamageMult)
       : damage;
+
+    // Count on the defender, only after invulnerability/block checks.
+    // Record before applyDamage so a lethal hit also contributes.
+    if (!blocked && finalDamage > 0 && this.health.isAlive()) {
+      this.comboCount = this.comboTimeLeft > 0 ? this.comboCount + 1 : 1;
+      this.comboTimeLeft = COMBAT.comboWindowSeconds;
+    }
     this.health.applyDamage(finalDamage);
+    this.onSound(blocked ? 'block' : 'hit');
 
     const fx = new THREE.Vector3(
       THREE.MathUtils.lerp(this.position.x, fromPosition.x, 0.4),
@@ -351,16 +449,18 @@ export class Fighter {
       this.onHitEffect(fx, 0x80b3ff);                 // blue spark
       this.velocity.x = awayX * COMBAT.blockPushback;
       this.velocity.z = awayZ * COMBAT.blockPushback;
-      this.#enterState(State.BLOCK);
-      return;
+      // Chip damage can KO too; do not overwrite the death state.
+      if (this.health.isAlive()) this.#enterState(State.BLOCK);
+      return 'block';
     }
     this.onHitEffect(fx, 0xffd94d);                   // yellow spark
 
     this.velocity.x = awayX * knockback;
     this.velocity.z = awayZ * knockback;
 
-    if (!this.health.isAlive()) return;               // onDied already set KO
+    if (!this.health.isAlive()) return 'hit';         // onDied already set KO
     this.#enterState(knocksDown ? State.KNOCKDOWN : State.HIT);
+    return 'hit';
   }
 
   /** A lunge that lands stops dead instead of passing through. */
@@ -375,13 +475,16 @@ export class Fighter {
   // -- integration --------------------------------------------------------
 
   #integrate(dt, world) {
+    const wasAboveFloor = this.position.y > ARENA.floorY;
     this.position.addScaledVector(this.velocity, dt);
 
-    // Floor.
+    // Floor. Test actual height crossing, not the initially false onFloor,
+    // so grounded spawns/reset states do not make phantom landing sounds.
     if (this.position.y <= ARENA.floorY) {
       this.position.y = ARENA.floorY;
       if (this.velocity.y < 0) this.velocity.y = 0;
       this.onFloor = true;
+      if (wasAboveFloor) this.onSound('land');
     } else {
       this.onFloor = false;
     }
@@ -411,7 +514,7 @@ export class Fighter {
   }
 
   #faceDirection(dirX, dirZ, dt) {
-    if (Math.hypot(dirX, dirZ) < 0.05) return;
+    if (Math.hypot(dirX, dirZ, dt) < 0.05) return;
     const targetY = Math.atan2(dirX, dirZ);
     this.rotationY = lerpAngle(this.rotationY, targetY, Math.min(MOVEMENT.turnSpeed * dt, 1));
     if (Math.abs(dirX) > 0.05) this.facingSign = Math.sign(dirX);
@@ -423,15 +526,36 @@ export class Fighter {
     // Don't restart a looping animation every frame.
     if (next === this.state && LOOPING_STATES.has(next)) return;
 
+    // Recovery ends the combo even when the inter-hit timer has time left.
+    // KNOCKDOWN -> GETUP is not recovery; GETUP must finish first.
+    if (next === State.IDLE && (this.state === State.HIT || this.state === State.GETUP)) {
+      this.comboCount = 0;
+      this.comboTimeLeft = 0;
+    }
+
+    // Getting interrupted discards earlier offensive intent. Fresh presses
+    // near the end of a reaction can still buffer a recovery attack.
+    if (next === State.HIT || next === State.KNOCKDOWN || next === State.KO) {
+      this.bufferedAttack = null;
+      this.attackBufferLeft = 0;
+    }
+
     this.state = next;
     this.stateTime = 0;
 
+    const punch = next === State.LIGHT_ATTACK
+      ? COMBAT.lightAttack
+      : next === State.HEAVY_ATTACK ? COMBAT.heavyAttack : null;
+    const speed = punch
+      ? punch.speed
+      : next === State.KNOCKDOWN ? COMBAT.knockdownSpeed : 1;
+
     if (SWING_STATES.has(next)) {
       let fallback = COMBAT.attackDuration;
-      if (next === State.ATTACK) {
+      if (punch || next === State.ATTACK) {
         this.attackKnocksDown = false;
-        this.attackDamage = COMBAT.attackDamage;
-        this.attackKnockback = COMBAT.knockbackForce;
+        this.attackDamage = punch ? punch.damage : COMBAT.attackDamage;
+        this.attackKnockback = punch ? punch.knockback : COMBAT.knockbackForce;
       } else if (next === State.KICK) {
         this.attackKnocksDown = false;
         this.attackDamage = COMBAT.kickDamage;
@@ -446,12 +570,15 @@ export class Fighter {
       }
 
       const clip = STATE_CLIP[next];
-      this.swingLength = this.animator.has(clip) ? this.animator.length(clip) : fallback;
+      const clipLength = this.animator.has(clip) ? this.animator.length(clip) : fallback;
+      this.swingLength = clipLength / speed;
       if (next === State.DROPKICK) {
         this.swingLength = Math.max(0.2, this.swingLength - COMBAT.dropkickStartOffset);
       }
       this.alreadyHit.clear();
       this.hitboxLive = false;
+      this.swingConnected = false;
+      this.swingSoundPlayed = false;
     }
 
     if (next === State.HIT || next === State.KNOCKDOWN || next === State.GETUP) {
@@ -467,7 +594,6 @@ export class Fighter {
     }
 
     const clip = STATE_CLIP[next];
-    const speed = next === State.KNOCKDOWN ? COMBAT.knockdownSpeed : 1;
     this.animator.play(clip, { loop: LOOPING_STATES.has(next), speed });
 
     if (this.debug) console.log(`[Fighter] ${this.name} -> ${next}`);

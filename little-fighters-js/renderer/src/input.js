@@ -1,23 +1,14 @@
 /**
- * Keyboard input for two local players, using the same mapping the Godot
- * build had. Physical key codes, so the layout works on any keyboard.
+ * Keyboard input for two local players. Physical key codes, so the layout
+ * works on any keyboard. Bindings live in config.js.
  *
- *   P1  WASD move · Space jump · ShiftLeft run · J punch · K kick · L block · U dash
- *   P2  Arrows move · Slash jump · Comma run · Period punch · M kick · N block · B dash
+ * P1: WASD move · Space jump · Left Shift run · J light · I heavy
+ *     K kick · L block · U dash
+ * P2: Arrows move · Slash jump · Comma run · Period light · H heavy
+ *     M kick · N block · B dash
  */
 
-const MAPS = {
-  p1: {
-    up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD',
-    jump: 'Space', run: 'ShiftLeft', attack: 'KeyJ',
-    kick: 'KeyK', block: 'KeyL', dash: 'KeyU',
-  },
-  p2: {
-    up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
-    jump: 'Slash', run: 'Comma', attack: 'Period',
-    kick: 'KeyM', block: 'KeyN', dash: 'KeyB',
-  },
-};
+import { INPUT_MAPS } from './config.js';
 
 const held = new Set();
 const pressedThisFrame = new Set();
@@ -44,7 +35,7 @@ export function endInputFrame() {
 
 /** A controller object a Fighter can read, matching the AI intent shape. */
 export function keyboardController(prefix) {
-  const map = MAPS[prefix] ?? MAPS.p1;
+  const map = INPUT_MAPS[prefix] ?? INPUT_MAPS.p1;
   return {
     move() {
       const x = (held.has(map.right) ? 1 : 0) - (held.has(map.left) ? 1 : 0);

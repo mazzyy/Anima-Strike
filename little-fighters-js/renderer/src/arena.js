@@ -105,58 +105,66 @@ export function createArena(canvas) {
   const restPosition = camera.position.clone();
   const trackingOffset = new THREE.Vector3();
   // Camera-local +Z points backward. Dolly along this axis rather than using
-  // an arbitrary Y/Z ratio, so pulling back does not shift the shot's aim.
+  // an arbitrary Y/Z ratio, so dollying does not shift the shot's aim.
   const pullDirection = new THREE.Vector3(0, 0, 1)
     .applyQuaternion(camera.quaternion);
   let currentPull = 0;
+  let currentPush = 0;
 
-  function updateCamera(dt, fighters) {
-    if (!CAMERA.track || !fighters || fighters.length < 2) return;
+  /** pushIn is a presentation offset in world units, independent of tracking. */
+  function updateCamera(dt, fighters, pushIn = 0) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
-    const [a, b] = fighters;
-    const midX = (a.position.x + b.position.x) / 2;
-    const midZ = (a.position.z + b.position.z) / 2;
-    const separation = Math.hypot(
-      a.position.x - b.position.x,
-      a.position.z - b.position.z,
-    );
-
-    // Clamp the tracking centre inside the arena. The camera itself keeps its
-    // original elevated, outside-the-ring offset from that centre.
-    const limitX = Math.min(CAMERA.maxOffsetX, ARENA.limitX);
-    const limitZ = Math.min(CAMERA.maxOffsetZ, ARENA.limitZ);
-    const targetX = THREE.MathUtils.clamp(
-      midX * CAMERA.followX, -limitX, limitX,
-    );
-    const targetZ = THREE.MathUtils.clamp(
-      midZ * CAMERA.followZ, -limitZ, limitZ,
-    );
-
-    // A dead zone avoids breathing during close exchanges. Nonnegative pull
-    // means tracking can never zoom closer than the original framing.
-    const targetPull = THREE.MathUtils.clamp(
-      (separation - CAMERA.restSeparation) * CAMERA.zoomPerUnit,
-      0,
-      CAMERA.maxPull,
-    );
-
-    // Frame-rate independent damping without overshoot. Keeping tracking and
-    // dolly separate preserves their bounds throughout the transition.
     const k = 1 - Math.exp(-CAMERA.damping * dt);
-    trackingOffset.x += (targetX - trackingOffset.x) * k;
-    trackingOffset.z += (targetZ - trackingOffset.z) * k;
-    currentPull += (targetPull - currentPull) * k;
+
+    if (CAMERA.track && fighters && fighters.length >= 2) {
+      const [a, b] = fighters;
+      const midX = (a.position.x + b.position.x) / 2;
+      const midZ = (a.position.z + b.position.z) / 2;
+      const separation = Math.hypot(
+        a.position.x - b.position.x,
+        a.position.z - b.position.z,
+      );
+
+      // Clamp the tracking centre inside the arena. The camera itself keeps
+      // its original elevated, outside-the-ring offset from that centre.
+      const limitX = Math.min(CAMERA.maxOffsetX, ARENA.limitX);
+      const limitZ = Math.min(CAMERA.maxOffsetZ, ARENA.limitZ);
+      const targetX = THREE.MathUtils.clamp(
+        midX * CAMERA.followX, -limitX, limitX,
+      );
+      const targetZ = THREE.MathUtils.clamp(
+        midZ * CAMERA.followZ, -limitZ, limitZ,
+      );
+
+      // Ordinary tracking never zooms closer than the original framing.
+      const targetPull = THREE.MathUtils.clamp(
+        (separation - CAMERA.restSeparation) * CAMERA.zoomPerUnit,
+        0,
+        CAMERA.maxPull,
+      );
+
+      trackingOffset.x += (targetX - trackingOffset.x) * k;
+      trackingOffset.z += (targetZ - trackingOffset.z) * k;
+      currentPull += (targetPull - currentPull) * k;
+    }
+
+    // The explicit presentation dolly also works with tracking disabled.
+    const targetPush = Number.isFinite(pushIn)
+      ? THREE.MathUtils.clamp(pushIn, 0, CAMERA.koPush)
+      : 0;
+    currentPush += (targetPush - currentPush) * k;
 
     camera.position.copy(restPosition)
       .add(trackingOffset)
-      .addScaledVector(pullDirection, currentPull);
+      .addScaledVector(pullDirection, currentPull - currentPush);
     // Pitch and field of view deliberately untouched; no lookAt().
   }
 
   function resetCamera() {
     trackingOffset.set(0, 0, 0);
     currentPull = 0;
+    currentPush = 0;
     camera.position.copy(restPosition);
   }
 

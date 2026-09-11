@@ -29,8 +29,8 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add a configurable 150ms, single-slot buffer for punch/kick presses, consumed as soon as the state machine permits without cancelling moves. Track unblocked, damaging hits on each defender, clearing t"
     },
     {
       "id": 3,
@@ -49,8 +49,8 @@
       "title": "Add a main menu and pause screen",
       "detail": "A title screen before the fight with 'Fight the CPU', 'Two players' and a difficulty selector (which sets the AI's base aggression and think interval). Escape pauses mid-fight with resume and quit-to-menu. The game loop should stop advancing while paused. Keep it all in the existing DOM overlay style rather than rendering menus in three.js.",
       "files": [],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add a DOM-based title/pause menu and a simulation gate that freezes every gameplay update while paused, without stopping rendering. Add configurable difficulty presets and per-controller AI settings; "
     },
     {
       "id": 5,
@@ -76,8 +76,8 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/tools/fighter.test.mjs"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add light and heavy punches on separate buttons, with configurable damage, knockback, and playback speeds that also scale startup and recovery. Both reuse `punch`; buffering, airborne punches, and per"
     },
     {
       "id": 7,
@@ -90,8 +90,8 @@
         "little-fighters-js/renderer/src/hud.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add a loop-owned time multiplier: confirmed, unblocked heavy punches freeze simulation for 60 ms; lethal hits then play one second at 0.35\u00d7 speed before round resolution and the KO banner. Add a small"
     },
     {
       "id": 8,
@@ -102,8 +102,8 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Fix audio unlocking by removing the promise-based resume latch: it can remain set after the context is running and incorrectly prevent a later gesture from resuming suspended audio. Each gesture now r"
     }
   ]
 }
