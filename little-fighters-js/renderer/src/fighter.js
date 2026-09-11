@@ -86,12 +86,13 @@ export class Fighter {
    * @param {number}  [opts.stats.jumpSpeed] vertical takeoff velocity
    * @param {number}  [opts.stats.damageScale] outgoing damage multiplier
    * @param {number}  [opts.stats.defenceScale] positive incoming damage divisor
+   * @param {number}  [opts.reachScale=1]   forward hitbox scale relative to BODY
    * @param {(pos: THREE.Vector3, color: number) => void} [opts.onHitEffect]
    * @param {(name: string) => void} [opts.onSound]
    */
   constructor({
     model, animator, controller, spawn, name = 'Fighter', stats = {},
-    onHitEffect, onSound,
+    reachScale = 1, onHitEffect, onSound,
   }) {
     this.name = name;
     this.model = model;
@@ -99,6 +100,9 @@ export class Fighter {
     this.controller = controller;
     this.onHitEffect = onHitEffect ?? (() => {});
     this.onSound = onSound ?? (() => {});
+
+    // Explicit opt-in: model scaling alone never changes legacy hit tests.
+    this.reachScale = Number.isFinite(reachScale) && reachScale > 0 ? reachScale : 1;
 
     // Own a resolved copy, never the caller's roster entry or config object.
     this.stats = {
@@ -417,9 +421,12 @@ export class Fighter {
     const localZ = dx * s + dz * c;
 
     const nearestX = Math.max(-box.halfWidth, Math.min(localX, box.halfWidth));
+    // Roster size changes forward reach only, not lane width or hurtboxes.
+    const offsetZ = box.offsetZ * this.reachScale;
+    const halfDepth = box.halfDepth * this.reachScale;
     const nearestZ = Math.max(
-      box.offsetZ - box.halfDepth,
-      Math.min(localZ, box.offsetZ + box.halfDepth),
+      offsetZ - halfDepth,
+      Math.min(localZ, offsetZ + halfDepth),
     );
     const distSq = (localX - nearestX) ** 2 + (localZ - nearestZ) ** 2;
     return distSq <= BODY.hurtRadius ** 2;

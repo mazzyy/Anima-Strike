@@ -1,11 +1,9 @@
 /**
  * Boot once, then run matches under the menu system.
  *
- * The split matters. Boot is everything that survives a match — the renderer,
- * the HUD, the loaded character and clips, the keyboard listeners. A match is
- * everything that does not: two fighters, the round clock, the CPU brain.
- * Quitting to the menu tears down only the second kind, so starting a fight is
- * instant and nothing leaks between matches.
+ * The renderer, HUD, character assets and keyboard listeners survive matches.
+ * Fighters, the round clock and CPU brain do not. The selected map is built
+ * inside the persistent arena when a match starts.
  *
  * P1: WASD move · Space jump · Left Shift run · J light jab · I heavy punch ·
  *     K kick · L block · U dash.  P2: arrows · / jump · , run · . light ·
@@ -16,6 +14,7 @@
  */
 
 import { loadGameAssets, createAnimator } from './assets.js';
+import { characterById, applyCharacter } from './characters.js';
 import { createArena } from './arena.js';
 import { createHUD } from './hud.js';
 import { initInput, endInputFrame, clearInput, keyboardController } from './input.js';
@@ -25,13 +24,13 @@ import { RoundManager, Phase } from './rounds.js';
 import { ImpactTiming } from './impact-timing.js';
 import { createMenus } from './menu.js';
 import { play } from './audio.js';
-import { ARENA, CAMERA, ROUNDS } from './config.js';
+import { ARENA, CAMERA, ROUNDS, SCALE, DIFFICULTIES } from './config.js';
 
 const canvas = document.getElementById('game');
 const loading = document.getElementById('loading');
 const loadingLabel = document.getElementById('loading-label');
 
-/** Set once by boot(): the renderer, HUD and character that outlive a match. */
+/** Set once by boot(): the renderer, HUD and character assets outlive a match. */
 let stage = null;
 
 /** The match in progress, or null while the menu is up. */
@@ -41,12 +40,28 @@ let match = null;
 // one match
 // ---------------------------------------------------------------------------
 
-function startMatch({ mode, ai: aiTuning }) {
+function startMatch({
+  mode,
+  difficulty,
+  ai: aiTuning,
+  p1Character,
+  p2Character,
+  map,
+}) {
   const { arena, hud, assets } = stage;
-  const twoPlayer = mode === 'two-player';
 
-  const spawn = (name, at, controller) => {
-    const model = assets.createCharacter();
+  // setMap disposes the previous procedural map and builds the chosen one.
+  // Keep the WebGL renderer, camera and loaded character assets alive.
+  arena.setMap(map);
+
+  const twoPlayer = mode === 'two-player';
+  const characters = [
+    characterById(p1Character),
+    characterById(p2Character),
+  ];
+
+  const spawn = (name, character, at, controller) => {
+    const model = applyCharacter(assets.createCharacter(), character);
     arena.scene.add(model);
     return new Fighter({
       model,
@@ -54,6 +69,8 @@ function startMatch({ mode, ai: aiTuning }) {
       controller,
       spawn: at,
       name,
+      stats: { ...character.stats },
+      reachScale: character.scale / SCALE,
       onHitEffect: (pos, color) => arena.spawnHitEffect(pos, color),
       onSound: play,
     });
@@ -64,9 +81,13 @@ function startMatch({ mode, ai: aiTuning }) {
     ? null
     : new AIController({ name: 'CPU', useLLM: true, debug: true, ...aiTuning });
 
-  const names = twoPlayer ? ['PLAYER 1', 'PLAYER 2'] : ['YOU', 'CPU'];
-  const p1 = spawn(names[0], ARENA.spawnP1, keyboardController('p1'));
-  const p2 = spawn(names[1], ARENA.spawnP2, twoPlayer ? keyboardController('p2') : ai);
+  const roles = twoPlayer ? ['PLAYER 1', 'PLAYER 2'] : ['YOU', 'CPU'];
+  const names = characters.map((character, index) => `${roles[index]} — ${character.name}`);
+  const p1 = spawn(names[0], characters[0], ARENA.spawnP1, keyboardController('p1'));
+  const p2 = spawn(
+    names[1], characters[1], ARENA.spawnP2,
+    twoPlayer ? keyboardController('p2') : ai,
+  );
 
   if (ai) {
     ai.attach(p2, p1);
@@ -84,7 +105,9 @@ function startMatch({ mode, ai: aiTuning }) {
   hud.setRounds('p1', 0, ROUNDS.toWin);
   hud.setRounds('p2', 0, ROUNDS.toWin);
   hud.setClock(ROUNDS.seconds);
-  hud.setBrainStatus(twoPlayer ? 'Local two-player — AI disabled' : stage.brainStatus);
+  hud.setBrainStatus(twoPlayer
+    ? 'Local two-player — AI disabled'
+    : `${DIFFICULTIES[difficulty].label} CPU — ${stage.brainStatus}`);
   arena.resetCamera();
 
   // Observe resolved hits without changing Fighter's damage, invulnerability,
@@ -150,8 +173,24 @@ function endMatch() {
   const { arena, hud } = stage;
 
   match.ai?.dispose();
-  for (const fighter of match.world.fighters) arena.scene.remove(fighter.model);
+  for (const fighter of match.world.fighters) {
+    arena.scene.remove(fighter.model);
 
+    // applyCharacter owns these materials. Geometry and textures still belong
+    // to the loaded asset and must survive for the next match.
+    const materials = new Set();
+    fighter.model.traverse((object) => {
+      if (!object.material) return;
+      const list = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of list) {
+        if (material) materials.add(material);
+      }
+    });
+    for (const material of materials) material.dispose();
+  }
+
+  arena.clearSparks();
+  arena.resetCamera();
   hud.hideBanner();
   hud.setPlan(null);
   match = null;
@@ -242,8 +281,8 @@ async function boot() {
     if (totals) hud.setUsage(totals);
   }, 2000);
 
-  // Assets are in memory, so the menu can appear. It owns Escape, pausing,
-  // the match lifecycle, and focus.
+  // Assets are in memory, so the menu can appear. It owns selection screens,
+  // Escape, pausing, the match lifecycle, and focus.
   loading.classList.add('done');
 
   const menus = createMenus({

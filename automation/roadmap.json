@@ -131,8 +131,8 @@
         "little-fighters-js/renderer/src/assets.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add six stat-distinct fighters, with roster tuning in config.js and material-safe appearance helpers in characters.js. Match creation will apply roster names, stats, tint, and scale; defaults are Axel"
     },
     {
       "id": 11,
@@ -143,8 +143,8 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add four procedural arenas with map-owned lighting, shared geometry, and idempotent cleanup. Keep combat bounds, fighters, and camera behavior unchanged. Add an arena selector between matches, safe ma"
     },
     {
       "id": 12,
@@ -155,8 +155,9 @@
         "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 119 # fail 1",
+      "blocked_by": "tests"
     },
     {
       "id": 13,
@@ -169,8 +170,8 @@
         "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add a small, headless selection state machine for mode \u2192 P1 character \u2192 P2/CPU character \u2192 map. The menu will render its cards, selection highlight, keyboard navigation and Back control while preservi"
     },
     {
       "id": 14,
@@ -184,8 +185,9 @@
         "little-fighters-js/renderer/src/input.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "API call failed: stream error: {\"type\": \"error\", \"error\": {\"type\": \"server_error\", \"code\": \"server_error\", \"headers\": {\"skip-error-remapping\": \"true\"}, \"message\": \"The server had an error processing your request. Sorry about that! You can retry your request, or contact us through an Azure support request at: https://go.microsoft.",
+      "blocked_by": "api"
     },
     {
       "id": 15,

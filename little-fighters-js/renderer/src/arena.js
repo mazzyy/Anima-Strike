@@ -1,16 +1,13 @@
 /**
- * The stage: scene, lighting, camera and floor, matching Arena.tscn as closely
- * as three.js reasonably allows — same base camera framing, same warm key
- * light and cool rim, same dark violet sky.
- *
- * Also owns the hit sparks, which were spawned by Fighter.gd in Godot. Keeping
- * them here means the fighter has no opinion about rendering.
+ * Persistent renderer, camera and hit effects. Procedural map ownership is
+ * separate, so changing stages never touches fighters or recreates WebGL.
  */
 
 import * as THREE from 'three';
-import { ARENA, BODY, CAMERA } from './config.js';
+import { ARENA, CAMERA } from './config.js';
+import { buildMap } from './arenas.js';
 
-export function createArena(canvas) {
+export function createArena(canvas, mapId) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -19,8 +16,8 @@ export function createArena(canvas) {
   renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x05060f);
-  scene.fog = new THREE.Fog(0x0a0a1a, 18, 46);
+  let map = buildMap(scene, mapId);
+  let disposed = false;
 
   const camera = new THREE.PerspectiveCamera(
     ARENA.camera.fov, window.innerWidth / window.innerHeight, 0.1, 500,
@@ -28,62 +25,26 @@ export function createArena(canvas) {
   camera.position.set(ARENA.camera.x, ARENA.camera.y, ARENA.camera.z);
   camera.rotation.x = THREE.MathUtils.degToRad(ARENA.camera.pitchDeg);
 
-  // -- lighting -----------------------------------------------------------
-  const hemi = new THREE.HemisphereLight(0x8090c0, 0x1a1a28, 0.7);
-  scene.add(hemi);
-
-  const key = new THREE.DirectionalLight(0xfff7eb, 1.9);
-  key.position.set(4, 9, 5);
-  key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 40;
-  key.shadow.camera.left = -10;
-  key.shadow.camera.right = 10;
-  key.shadow.camera.top = 10;
-  key.shadow.camera.bottom = -10;
-  key.shadow.bias = -0.0009;
-  scene.add(key);
-
-  const rim = new THREE.DirectionalLight(0x8caeff, 0.7);
-  rim.position.set(-5, 6, -6);
-  scene.add(rim);
-
-  // -- floor --------------------------------------------------------------
-  const floor = new THREE.Mesh(
-    new THREE.BoxGeometry(12, 1, 12),
-    new THREE.MeshStandardMaterial({ color: 0x2a2c3d, roughness: 0.85, metalness: 0.1 }),
-  );
-  floor.position.y = ARENA.floorY - 0.5;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  const grid = new THREE.GridHelper(12, 12, 0x5a6cff, 0x2d3350);
-  grid.position.y = ARENA.floorY + 0.01;
-  grid.material.opacity = 0.35;
-  grid.material.transparent = true;
-  scene.add(grid);
-
-  // A glowing ring marking the fighting area, so the bounds are readable.
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(ARENA.limitX + BODY.radius - 0.06, ARENA.limitX + BODY.radius, 64),
-    new THREE.MeshBasicMaterial({ color: 0x6f7bff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }),
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = ARENA.floorY + 0.02;
-  scene.add(ring);
-
   // -- hit sparks ---------------------------------------------------------
   const sparks = [];
   const sparkGeo = new THREE.SphereGeometry(0.22, 12, 10);
 
   function spawnHitEffect(position, color) {
+    if (disposed) return;
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 });
     const mesh = new THREE.Mesh(sparkGeo, mat);
     mesh.position.copy(position);
     mesh.scale.setScalar(0.4);
     scene.add(mesh);
     sparks.push({ mesh, mat, t: 0, life: 0.18 });
+  }
+
+  function clearSparks() {
+    for (const spark of sparks) {
+      spark.mesh.removeFromParent();
+      spark.mat.dispose();
+    }
+    sparks.length = 0;
   }
 
   function updateSparks(dt) {
@@ -168,6 +129,16 @@ export function createArena(canvas) {
     camera.position.copy(restPosition);
   }
 
+  /** Replace only the map; all maps occupy exactly one scene child. */
+  function setMap(nextMapId) {
+    if (disposed) return;
+    clearSparks();
+    map.dispose();
+    map = buildMap(scene, nextMapId);
+    resetCamera();
+    return map.mapId;
+  }
+
   function resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -178,10 +149,24 @@ export function createArena(canvas) {
   resize();
   window.addEventListener('resize', resize);
 
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    window.removeEventListener('resize', resize);
+    clearSparks();
+    map.dispose();
+    sparkGeo.dispose();
+    renderer.dispose();
+  }
+
   return {
     renderer, scene, camera,
-    spawnHitEffect, updateSparks,
+    get mapId() { return map.mapId; },
+    setMap, dispose,
+    spawnHitEffect, updateSparks, clearSparks,
     updateCamera, resetCamera,
-    render: () => renderer.render(scene, camera),
+    render: () => {
+      if (!disposed) renderer.render(scene, camera);
+    },
   };
 }
