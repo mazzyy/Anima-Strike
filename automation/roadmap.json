@@ -6,13 +6,18 @@
     "",
     "Ordered so earlier items don't depend on later ones. `files` narrows the",
     "",
-    "Items 9-19 (2026-09-11) expand the game: roster, maps, specials, grabs, air",
-    "combat, wider bindings. Ground rules for every one of them:",
-    "  * Logic goes in a pure module testable under `node --test`; DOM only renders it.",
-    "  * A new module is not finished until main.js (or something it imports) imports",
-    "    it \u2014 tools/wiring.test.mjs fails on orphans.",
-    "  * tools/module-graph.test.mjs links the whole renderer against the VENDORED",
-    "    three.js, so a bad named import fails the gate instead of the app."
+    "Items 20-25 (2026-09-11) are the depth pass: LF2-scale stages, a real move",
+    "list per character, effects, sound, supers, and a CPU that uses all of it.",
+    "Ground rules, unchanged and non-negotiable:",
+    "  * Logic in a pure module testable under `node --test`; DOM and three.js",
+    "    only render it. A DOM-only module cannot be gated and passes vacuously.",
+    "  * A new module is not finished until main.js (or something it imports)",
+    "    imports it \u2014 tools/wiring.test.mjs fails on orphans.",
+    "  * Reaction timings are AUTHORED in COMBAT.reaction, never read from a clip",
+    "    length. tools/fighter-stun.test.mjs exists because that caused an",
+    "    infinite stun-lock that shipped.",
+    "  * Nothing that walks on the floor may share a plane with the floor.",
+    "    tools/arena-depth.test.mjs exists because that caused visible z-fighting."
   ],
   "items": [
     {
@@ -155,8 +160,8 @@
         "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 119 # fail 1",
+      "status": "done",
+      "note": "Landed as renderer/src/match-selection.js under item 13, with tools/match-selection.test.mjs. Closed 2026-09-11.",
       "blocked_by": "tests"
     },
     {
@@ -185,8 +190,8 @@
         "little-fighters-js/renderer/src/input.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "blocked",
-      "note": "API call failed: stream error: {\"type\": \"error\", \"error\": {\"type\": \"server_error\", \"code\": \"server_error\", \"headers\": {\"skip-error-remapping\": \"true\"}, \"message\": \"The server had an error processing your request. Sorry about that! You can retry your request, or contact us through an Azure support request at: https://go.microsoft.",
+      "status": "done",
+      "note": "Superseded by item 24, which specifies the meter and the supers properly instead of leaving \"special\" as a bare string id. Original attempt failed on an Azure server error, not on the work.",
       "blocked_by": "api"
     },
     {
@@ -248,6 +253,83 @@
         "little-fighters-js/renderer/src/characters.js",
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 20,
+      "title": "Rebuild the stages at Little Fighter 2 scale",
+      "detail": "The playable area is 4.8 by 4.8 units \u2014 a small square the fighters bounce off. Little Fighter 2 stages are WIDE: you walk for a long time left and right, and only a little toward and away from the camera. Rebuild for that shape.\n\nSplit MAP_ART.floorSize into floorWidth and floorDepth and update all eleven uses in arenas.js, choosing per-axis correctly: the rooftop's back parapet and any prop that runs left-to-right spans floorWidth; the side parapets, street curbs and anything running toward the camera span floorDepth. Set floorWidth to about 48 and floorDepth to about 14, and set ARENA.limitX and limitZ from those minus a margin, so a fighter can walk roughly ten body-lengths end to end and about two across. Move the spawns further apart to suit.\n\nThen make the art actually fill that width instead of huddling in the middle. Every prop currently placed at a hand-written x \u2014 the dojo's five paper screens and three lanterns, the street's signage and curbs, the temple's pillars, the rooftop's towers \u2014 must repeat across the full width at a sensible spacing rather than being stretched or left clustered at the centre. Vary them with the existing noise() so the repetition does not read as wallpaper.\n\nWatch the cost: addTiles builds one mesh per tile, so a wider floor multiplies the count. Use THREE.InstancedMesh for the tiles, planks and any prop repeated more than about twenty times, so a bigger stage does not cost frame rate. Keep every map's dispose() releasing what it created \u2014 instanced or not.\n\nThe camera must follow across the width: CAMERA.maxOffsetX has to grow with the stage, while maxOffsetZ stays small. Keep the fighters framed at the ends of the stage, not just at the centre.\n\nTests: floorWidth is at least three times floorDepth; ARENA.limitX is at least eight times BODY.radius; every map's dispose() returns the scene to its starting child count; the total mesh count per map stays under a stated budget; and the camera keeps both fighters inside the frustum with one at each end of the stage.",
+      "files": [
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/arena.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 21,
+      "title": "Give every character a real move list, not a stat block",
+      "detail": "characters.js is 1.4 KB: six entries differing only by tint, scale and six numbers. The fighters are the same knight in different colours with the same eight buttons. That is the single biggest gap in the game.\n\nAdd renderer/src/moves.js: a data-driven move table plus the pure logic that resolves an input into a move. A move is { id, name, input, startup, active, recovery, damage, knockback, knocksDown, reach, hitHeight ('low' | 'mid' | 'high' | 'air'), cancelInto, meterGain, vfx, sound, clip, clipSpeed }. `input` is a command, not a single button: a direction sequence plus a button, in the Street Fighter idiom \u2014 'forward,down,light', 'back,back,heavy', 'down,up,kick' \u2014 resolved against a short input history so a player can actually perform it. `cancelInto` lists the move ids this move may be cancelled into during its recovery, which is what turns single hits into strings.\n\nGive EACH of the six characters eight to twelve moves, and make them play differently, not just hit for different numbers:\n  Axel (balanced) \u2014 a three-hit jab string, a launcher, a sweep, a rushing elbow, an anti-air uppercut, a command grab.\n  Rook (heavy) \u2014 slow armoured swings that shrug off one hit during startup, a ground pound with a shockwave that hits both sides, a running shoulder, a lariat.\n  Zip (fast) \u2014 four-hit strings, a teleport dash, a run-cancel, an air dive, hit-and-run moves with tiny damage and huge speed.\n  Pike (reach) \u2014 long pokes that control space, a thrust with a long active window, a counter-poke that beats approaches, a low slide.\n  Bastion (defensive) \u2014 a parry that converts into a punish, a guard-cancel push, a reversal that only works from block, high defence and low mobility.\n  Ember (glass cannon) \u2014 enormous damage, almost no defence, a projectile, a diving flame kick, a self-damaging overdrive.\n\nKeep moves.js pure: no THREE, no DOM, no timers. Export the tables plus resolveMove(history, character, state) and canCancel(from, into). fighter.js consults it rather than reimplementing it, and keeps its existing states working \u2014 moves are an addition, not a replacement.\n\nTests, thoroughly: every move id is unique per character; every cancelInto target exists; startup, active and recovery are all positive and sum to a sane duration; a command is recognised from a correct input history and rejected from a wrong one, including a near-miss with one direction wrong; commands time out if entered too slowly; longer commands win over shorter ones that are a prefix of them; each character's total damage output over its best string differs meaningfully from the others'; and no move both knocks down and cancels into another move, which would be an infinite.",
+      "files": [
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/input.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 22,
+      "title": "Add a visual effects system with real impact",
+      "detail": "Hits currently spawn one small coloured sphere. Modern fighting games sell a hit with layered effects, and the game has none of that.\n\nAdd renderer/src/vfx.js: a pooled effect system built procedurally in three.js, with no external assets and no new dependencies. Effects to implement, each parameterised by position, direction, scale and colour:\n  * impact flash \u2014 a bright expanding billboard that fades in under 0.15s\n  * spark burst \u2014 a dozen short streaks thrown outward along the hit direction\n  * shockwave \u2014 an expanding ground ring, for ground pounds and heavy landings\n  * lightning \u2014 a jagged branching polyline between two points, regenerated a few times a second so it crackles, with an additive glow\n  * energy projectile \u2014 a glowing core with a trailing tail that can travel and expire\n  * afterimage \u2014 a few fading copies of the fighter's pose during a dash or teleport\n  * dust \u2014 puffs at the feet on landing, dashing and being knocked down\n  * screen shake \u2014 a short camera offset that decays, scaled by the hit's weight\n  * hit spark colour by move weight, so a light jab and a super do not look alike\n\nPool and reuse geometry and materials; never allocate per frame in the update loop. One update(dt) drives everything, and one clear() empties it between rounds. Wire it so every move's `vfx` id from item 21 selects an effect, the arena owns the instance, and screen shake reaches the camera without fighting the existing tracking, pull-back and KO push-in.\n\nTests, headless: effects expire and are returned to the pool; the pool never grows beyond its cap under sustained spawning; clear() releases everything and disposes what it allocated; screen shake decays to exactly zero and never leaves the camera offset; an unknown vfx id is ignored rather than throwing; and the lightning generator produces a connected path between its two endpoints every time.",
+      "files": [
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/fighter.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 23,
+      "title": "Give every move its own sound",
+      "detail": "audio.js synthesises four sounds: hit, block, whiff, land. Every attack in the game sounds the same, which flattens all of item 21's variety back out.\n\nExtend the procedural synthesis \u2014 still no audio files \u2014 so each move's `sound` id from item 21 maps to its own voice, and build the vocabulary the move list needs: a light jab's short bright snap, a heavy's low thud with body, a whoosh that pitches with the swing's speed, a metallic clash when two attacks trade, a parry's chime, a grab's cloth-and-impact, a throw's landing crack, an electric crackle for lightning moves, a projectile's launch and its impact, a deep boom for a ground pound, a rising sweep for a super's activation, and a KO stinger.\n\nLayer them the way the existing sounds already do \u2014 a filtered noise burst plus a pitched tone \u2014 and vary pitch slightly per trigger so repeated jabs do not sound like a loop. Respect the existing voice cap, mute key and master volume, and keep dropping sounds rather than queueing them when the cap is hit.\n\nTests: every sound id referenced by a move exists in the table; every envelope has a positive duration and a non-zero volume; the voice cap is never exceeded under a burst of triggers; muting silences new sounds; and pitch variation stays inside a stated range so nothing ever sounds wrong rather than merely different.",
+      "files": [
+        "little-fighters-js/renderer/src/audio.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/fighter.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 24,
+      "title": "Add a super meter and one signature super per character",
+      "detail": "Put the meter maths in its own pure module, renderer/src/meter.js, so it is testable without a fighter: it fills from damage dealt and damage taken at different rates, caps at a full bar, has stocks rather than a single bar so a player can bank one, and spends a whole stock on activation. Carry it between rounds or reset it, but decide deliberately and say which in a comment.\n\nThen give each character from item 21 one signature super that costs a stock, using the vfx and sound vocabulary from items 22 and 23:\n  Axel \u2014 a rushing multi-hit combination ending in a launcher\n  Rook \u2014 a leaping ground pound with a screen-wide shockwave\n  Zip \u2014 a teleport flurry that strikes from several positions in sequence\n  Pike \u2014 a long committed thrust that pierces a block\n  Bastion \u2014 a counter stance that, if struck during it, answers with a full punish\n  Ember \u2014 a lightning column that sets the point of impact alight\n\nA super gets brief invulnerability during its startup, a short cinematic pause on connection, and cannot be cancelled into another move. Show the meter and its stocks in the HUD under each health bar, filling smoothly rather than jumping.\n\nTests: the meter fills, caps and banks stocks correctly; activation below a full stock is refused and consumes nothing; activation spends exactly one stock; damage dealt and damage taken fill at their stated different rates; a super cannot be cancelled into; its startup invulnerability begins and ends on the stated frames; and each character's super differs in damage, reach and duration.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/hud.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 25,
+      "title": "Teach the CPU to use the move list",
+      "detail": "ai.js presses the old eight buttons. After items 21 and 24 it would fight with a fraction of its character's kit while the human has all of it, which reads as the CPU being stupid rather than as a difficulty setting.\n\nLet the AI pick moves from its own character's table: perform the command inputs through the same resolution path a player uses rather than bypassing it, choose by range band (close, mid, far) and situation (opponent airborne, blocking, recovering, knocked down), continue a string by cancelling where the table allows it, hold a super for a punish rather than throwing it on cooldown, and respect the existing difficulty presets \u2014 an Easy CPU should use short strings and miss punishes, a Hard one should convert them.\n\nKeep the model bridge exactly as it is: the Azure plan re-weights preferences, and the local layer stays in the critical path so no key and no reply still plays fine.\n\nTests: the AI only ever selects moves its own character owns; commands it emits are accepted by the same resolver a player's input goes through; it prefers a longer-reach move at longer range; it does not attempt a knocked-down opponent; and Easy produces measurably shorter strings than Hard over a simulated exchange.",
+      "files": [
+        "little-fighters-js/renderer/src/ai.js",
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/fighter.js"
       ],
       "status": "pending",
       "note": ""

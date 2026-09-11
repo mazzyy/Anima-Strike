@@ -19,8 +19,16 @@ export function createArena(canvas, mapId) {
   let map = buildMap(scene, mapId);
   let disposed = false;
 
+  // Depth range, not defaults. 0.1-to-500 is a 5000:1 ratio, which spends
+  // almost all of the depth buffer's precision on the first metre in front of
+  // the lens — where nothing ever is. The camera sits ~13 units back and the
+  // nearest geometry is ~10 units away, so starting at 1 costs nothing and
+  // buys back the precision that flat ground detail needs.
   const camera = new THREE.PerspectiveCamera(
-    ARENA.camera.fov, window.innerWidth / window.innerHeight, 0.1, 500,
+    ARENA.camera.fov,
+    window.innerWidth / window.innerHeight,
+    ARENA.camera.near,
+    ARENA.camera.far,
   );
   camera.position.set(ARENA.camera.x, ARENA.camera.y, ARENA.camera.z);
   camera.rotation.x = THREE.MathUtils.degToRad(ARENA.camera.pitchDeg);

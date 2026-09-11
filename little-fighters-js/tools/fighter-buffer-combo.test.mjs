@@ -141,23 +141,46 @@ test('an interruption clears old input, but a fresh recovery press works', () =>
   assert.equal(fighter.comboCount, 0);
 });
 
-test('combos count hits received and refresh their inter-hit timeout', () => {
+// This block replaced a single test that asserted a defender was STILL in
+// hitstun a full second after being hit, with a 3-second hit clip. That was
+// only true because hitstun was read from the clip, which is the stun-lock bug
+// — see tools/fighter-stun.test.mjs. The intent (count hits, expire the count)
+// is kept; the premise that stun outlasts the combo window is not.
+
+test('combos count hits that land before the defender recovers', () => {
   const { fighter, tick } = setup({ hit: 3 });
   fighter.takeHit(1, attackerPosition);
   assert.equal(fighter.comboCount, 1);
 
-  tick(COMBAT.comboWindowSeconds - 0.1);
+  tick(COMBAT.reaction.hitStun / 2);
+  assert.equal(fighter.state, State.HIT, 'still inside the reaction');
   fighter.takeHit(1, attackerPosition);
-  assert.equal(fighter.comboCount, 2);
+  assert.equal(fighter.comboCount, 2, 'a hit inside stun continues the string');
+});
 
-  tick(COMBAT.comboWindowSeconds - 0.1);
-  assert.equal(fighter.comboCount, 2);
-  tick(0.11);
-  assert.equal(fighter.state, State.HIT, 'timeout can precede recovery');
-  assert.equal(fighter.comboCount, 0);
+test('recovering ends the combo, however long the hit clip is', () => {
+  const { fighter, tick } = setup({ hit: 3 });
+  fighter.takeHit(1, attackerPosition);
+
+  tick(COMBAT.reaction.hitStun + 0.02);
+  assert.notEqual(fighter.state, State.HIT, 'a 3s clip must not mean 3s of stun');
+  assert.equal(fighter.comboCount, 0, 'recovery ends the string');
 
   fighter.takeHit(1, attackerPosition);
+  assert.equal(fighter.comboCount, 1, 'and the next hit starts a fresh one');
+});
+
+test('the inter-hit timeout still zeroes a count during a long reaction', () => {
+  // Knockdown plus getup outlasts the combo window, so the timeout can still
+  // fire before the defender is back on its feet.
+  const { fighter, tick } = setup({ hit: 3, knockdown: 3, getup: 3 });
+  fighter.takeHit(1, attackerPosition, true);
+  assert.equal(fighter.state, State.KNOCKDOWN);
   assert.equal(fighter.comboCount, 1);
+
+  tick(COMBAT.comboWindowSeconds + 0.02);
+  assert.notEqual(fighter.state, State.IDLE, 'timeout can precede recovery');
+  assert.equal(fighter.comboCount, 0);
 });
 
 test('normal hit recovery ends a combo before its timeout', () => {

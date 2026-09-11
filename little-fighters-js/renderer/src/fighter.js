@@ -252,6 +252,36 @@ export class Fighter {
     if (this.state !== State.KNOCKDOWN && this.state !== State.GETUP) {
       this.grabImmunityLeft = Math.max(0, this.grabImmunityLeft - dt);
     }
+
+    this.invulnerableLeft = Math.max(0, this.invulnerableLeft - dt);
+  }
+
+  /** Read by #canGrab and takeHit. True during the window after standing up. */
+  get invulnerable() {
+    return this.invulnerableLeft > 0;
+  }
+
+  /** Boolean form, for tests and for any caller that wants a flat toggle. */
+  set invulnerable(value) {
+    this.invulnerableLeft = value
+      ? Math.max(this.invulnerableLeft, COMBAT.reaction.getupInvulnerable)
+      : 0;
+  }
+
+  /**
+   * How long this fighter is locked out of its own input by a reaction.
+   *
+   * Hitstun decays across a combo so a string cannot run forever: by the
+   * fourth or fifth hit the defender recovers fast enough to contest, which
+   * is what makes a combo a combo rather than a life sentence.
+   */
+  #reactionWindow(next) {
+    const r = COMBAT.reaction;
+    if (next === State.KNOCKDOWN) return r.knockdown;
+    if (next === State.GETUP) return r.getup;
+
+    const hitsSoFar = Math.max(0, this.comboCount - 1);
+    return Math.max(r.minHitStun, r.hitStun * r.comboDecay ** hitsSoFar);
   }
 
   /** Round-boundary reset; no animation, controller, or health side effects. */
@@ -267,6 +297,7 @@ export class Fighter {
     this.grabbedFighter = null;
     this.heldBy = null;
     this.grabImmunityLeft = 0;
+    this.invulnerableLeft = 0;
     this.grabAttempted = false;
     this.grabStartup = 0;
     this.grabYaw = 0;
@@ -653,6 +684,9 @@ export class Fighter {
     if (this.state === State.KO || this.state === State.KNOCKDOWN || this.state === State.GETUP) {
       return;
     }
+    // The window after standing up. Without it, the attacker who knocked you
+    // down simply does it again the frame you are upright.
+    if (this.invulnerable) return;
 
     let awayX = this.position.x - fromPosition.x;
     let awayZ = this.position.z - fromPosition.z;
@@ -784,6 +818,13 @@ export class Fighter {
       this.comboTimeLeft = 0;
     }
 
+    // Standing up grants a brief window of safety. Without it the attacker who
+    // knocked you down simply does it again the frame you are upright. Read
+    // this.state here, while it is still the state being left.
+    if (next === State.IDLE && this.state === State.GETUP) {
+      this.invulnerableLeft = COMBAT.reaction.getupInvulnerable;
+    }
+
     // Getting interrupted discards earlier offensive intent. Fresh presses
     // near the end of a reaction can still buffer a recovery attack.
     if (
@@ -801,7 +842,9 @@ export class Fighter {
     const punch = next === State.LIGHT_ATTACK
       ? COMBAT.lightAttack
       : next === State.HEAVY_ATTACK ? COMBAT.heavyAttack : null;
-    const speed = punch
+    // Reassigned below for reactions, whose clips are re-timed to fit their
+    // authored window rather than dictating it.
+    let speed = punch
       ? punch.speed
       : next === State.KNOCKDOWN ? COMBAT.knockdownSpeed : 1;
 
@@ -868,14 +911,19 @@ export class Fighter {
     }
 
     if (next === State.HIT || next === State.KNOCKDOWN || next === State.GETUP) {
-      let fallback = COMBAT.hitStun;
-      if (next === State.KNOCKDOWN) fallback = COMBAT.knockdownDuration;
-      else if (next === State.GETUP) fallback = COMBAT.getupDuration;
+      // Authored, never the clip's length. See COMBAT.reaction for why: a
+      // clip-length lockout is an infinite stun-lock, because hit.glb is
+      // nearly three times a light jab's whole cycle.
+      this.reactionLength = this.#reactionWindow(next);
 
-      const clip = STATE_CLIP[next];
-      this.reactionLength = this.animator.has(clip) ? this.animator.length(clip) : fallback;
-      if (next === State.KNOCKDOWN) {
-        this.reactionLength /= Math.max(0.1, COMBAT.knockdownSpeed);
+      // Re-time the clip to the window instead of cutting it off, so a short
+      // stun still plays a complete reaction — just a snappier one.
+      const clipName = STATE_CLIP[next];
+      if (this.animator.has(clipName) && this.reactionLength > 0) {
+        const length = this.animator.length(clipName);
+        speed = THREE.MathUtils.clamp(
+          length / this.reactionLength, 0.25, COMBAT.reaction.maxClipSpeed,
+        );
       }
     }
 

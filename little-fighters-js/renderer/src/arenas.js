@@ -135,13 +135,15 @@ function addLighting(root, theme) {
 }
 
 function addFloor(kit, theme) {
-  const { floorSize, floorThickness } = MAP_ART;
+  const { floorSize, floorThickness, deckSink } = MAP_ART;
+  // Top face at -deckSink, NOT at 0. Decking (tiles, planks) keeps y=0, so the
+  // two never share a plane and never fight for pixels. See MAP_ART.deckSink.
   kit.box(
     kit.material(theme.floorColor, {
       roughness: theme.roughness,
       metalness: theme.metalness,
     }),
-    0, -floorThickness / 2, 0,
+    0, -deckSink - floorThickness / 2, 0,
     floorSize, floorThickness, floorSize,
   );
 }

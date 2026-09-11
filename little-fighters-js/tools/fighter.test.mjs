@@ -169,11 +169,13 @@ test('a knockdown hit runs KNOCKDOWN -> GETUP -> IDLE', () => {
   f.takeHit(10, new THREE.Vector3(1, 0, 0), true);
   assert.equal(f.state, State.KNOCKDOWN);
 
-  // knockdown clip 1.4s played at knockdownSpeed
-  step(world, 1.4 / COMBAT.knockdownSpeed + 0.05);
+  // Reaction windows are authored in COMBAT.reaction, not read off the clip
+  // — see the stun-lock fix. Drive the test from the same source the code uses
+  // rather than from a clip length that no longer decides anything.
+  step(world, COMBAT.reaction.knockdown + 0.05);
   assert.equal(f.state, State.GETUP);
 
-  step(world, 0.75);
+  step(world, COMBAT.reaction.getup + 0.05);
   assert.equal(f.state, State.IDLE);
 });
 

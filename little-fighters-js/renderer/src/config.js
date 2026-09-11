@@ -62,6 +62,39 @@ export const COMBAT = {
   getupDuration: 0.6,
   knockdownSpeed: 1.8,
 
+  /**
+   * How long a fighter is locked out of its own input after being hit.
+   *
+   * This MUST be authored, never taken from the length of the reaction clip.
+   * hit.glb runs 0.83s and a light jab's whole cycle is 0.30s, so a clip-length
+   * reaction means the attacker lands a fresh jab roughly three times for every
+   * one chance the victim gets to act — which is to say, never. That is an
+   * infinite stun-lock, and it is not a difficulty setting.
+   *
+   * The rule that keeps a game playable: the victim's lockout must be shorter
+   * than the attacker's own recovery, so pressure costs the attacker something.
+   * Combos then come from *cancelling* into the next move deliberately, not
+   * from the defender being unable to exist.
+   *
+   * Reaction clips are re-timed to fit the window rather than truncated, so a
+   * shorter stun plays the same animation faster instead of cutting it off.
+   */
+  reaction: {
+    hitStun: 0.28,
+    // Each further hit in one combo stuns for less, so a string has to end.
+    comboDecay: 0.82,
+    minHitStun: 0.12,
+
+    knockdown: 0.85,
+    getup: 0.45,
+    // Invulnerable for a moment after standing up, or the same attacker just
+    // starts the knockdown loop again the instant you are back on your feet.
+    getupInvulnerable: 0.55,
+
+    // Never re-time a clip beyond this, or reactions read as a twitch.
+    maxClipSpeed: 3.0,
+  },
+
   grab: {
     // Center-to-center ground-plane distance; never scaled by roster reach.
     range: 1.25,
@@ -182,7 +215,7 @@ export const ARENA = {
   limitZ: 2.75 - BODY.radius,
   spawnP1: { x: -2, y: 1, z: 0 },
   spawnP2: { x: 2, y: 1, z: 0 },
-  camera: { x: 0, y: 10, z: 9.5, pitchDeg: -38, fov: 40 },
+  camera: { x: 0, y: 10, z: 9.5, pitchDeg: -38, fov: 40, near: 1, far: 220 },
 };
 
 /**
@@ -193,7 +226,26 @@ export const MAP_ART = {
   floorSize: 12,
   floorThickness: 1,
   roughness: 0.85,
-  surfaceLift: 0.008,
+
+  /**
+   * How far a flat decal sits above the walking plane.
+   *
+   * 8mm was not enough: with the camera's old 0.1-to-500 depth range the
+   * depth buffer could not separate surfaces that close, so decals and floor
+   * fought for the same pixels and the ground flickered whenever the camera
+   * moved — which it does constantly, because it tracks the fighters.
+   */
+  surfaceLift: 0.015,
+
+  /**
+   * How far the base slab sits BELOW the decking that covers it.
+   *
+   * Zero is the bug: addFloor put its top face at exactly y=0 and every
+   * plank, tile and board put its top face at exactly y=0 too. Two coplanar
+   * surfaces across the whole stage is textbook z-fighting. The decking stays
+   * at the fighters' floor plane; the slab underneath moves down.
+   */
+  deckSink: 0.05,
   radialSegments: 16,
   sphereRows: 10,
   boundaryWidth: 0.035,
