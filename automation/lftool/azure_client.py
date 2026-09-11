@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import random
 import re
 import time
@@ -161,6 +162,8 @@ class AzureClient:
         self.cfg = cfg or Config()
         self.quiet = quiet
         self._auth_style = "api-key"
+        # Streaming by default: see _post_stream for why. LF_STREAM=0 disables it.
+        self.stream = os.environ.get("LF_STREAM", "1").strip() not in ("0", "false", "False")
         self._canaried = False
         self._adapted_max = False
         self._waited_for_quota = False
@@ -186,6 +189,56 @@ class AzureClient:
             self.cfg.endpoint, data=payload, headers=self._headers(), method="POST")
         with urllib.request.urlopen(req, timeout=self.cfg.timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
+
+    def _post_stream(self, body: dict[str, Any]) -> dict[str, Any]:
+        """POST with stream=true and reassemble the reply from the SSE events.
+
+        This is the fix for the 60-second silent close. A reasoning model spends
+        a long time thinking before emitting anything, so a non-streaming
+        request leaves the socket silent for over a minute and something in the
+        path treats it as dead. Streaming keeps tokens arriving continuously, so
+        the connection is never idle.
+
+        The reconstructed dict is shaped like a normal Responses API payload, so
+        nothing downstream needs to know the difference.
+        """
+        payload = json.dumps({**body, "stream": True}).encode("utf-8")
+        headers = {**self._headers(), "Accept": "text/event-stream"}
+        req = urllib.request.Request(
+            self.cfg.endpoint, data=payload, headers=headers, method="POST")
+
+        chunks: list[str] = []
+        final: dict[str, Any] | None = None
+
+        with urllib.request.urlopen(req, timeout=self.cfg.timeout) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+
+                kind = event.get("type", "")
+                if kind.endswith("output_text.delta"):
+                    chunks.append(event.get("delta") or "")
+                elif kind in ("response.completed", "response.incomplete",
+                              "response.failed"):
+                    final = event.get("response") or final
+                elif kind == "error":
+                    raise AzureError(f"stream error: {json.dumps(event)[:300]}")
+
+        text = "".join(chunks)
+        if final is None:
+            final = {"model": self.cfg.model, "status": "completed", "usage": {}}
+        # Prefer what we accumulated; the final event sometimes omits the text.
+        if text:
+            final["output_text"] = text
+        return final
 
     def _canary(self, body: dict[str, Any]) -> str | None:
         """Ask the same question with a tiny body, to make a silent rejection speak.
@@ -224,7 +277,7 @@ class AzureClient:
 
         for attempt in range(1, attempts + 1):
             try:
-                data = self._post(body)
+                data = self._post_stream(body) if self.stream else self._post(body)
                 if self._adapted_max and body.get("max_output_tokens"):
                     est_in = len(json.dumps(body.get("input", "")).encode()) // 4
                     total = est_in + int(body["max_output_tokens"])

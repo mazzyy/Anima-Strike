@@ -82,18 +82,20 @@ export const ROUNDS = {
 };
 
 /**
- * The camera follows the midpoint between the fighters and eases back as they
- * separate, so both stay framed. Pitch and field of view never change — only
- * position — which keeps the arena reading the same as the fixed shot did.
+ * Follow the fighters' ground-plane midpoint and dolly backward as they
+ * separate. Tracking offsets are also clamped to ARENA.limitX/limitZ.
+ * The original camera offset is the closest framing; pitch and FOV stay fixed.
  */
 export const CAMERA = {
   track: true,
-  followX: 0.55,        // how much of the midpoint's X to follow (0 = static)
-  maxOffsetX: 2.2,      // never slide further than this from centre
-  zoomPerUnit: 0.55,    // metres of pull-back per metre of separation
-  maxPull: 4.5,
-  restSeparation: 2.5,  // separation at which no pull-back is applied
-  damping: 3.5,         // higher = snappier; this is a per-second rate
+  followX: 1.0,        // fraction of the midpoint's X to follow (0 = static)
+  followZ: 1.0,        // fraction of the midpoint's Z to follow (0 = static)
+  maxOffsetX: 2.2,     // maximum tracking-centre displacement from arena centre
+  maxOffsetZ: 2.2,
+  zoomPerUnit: 0.55,   // metres backward along view axis per metre of separation
+  maxPull: 4.5,        // maximum extra dolly distance beyond original framing
+  restSeparation: 2.5, // separation at which no pull-back is applied
+  damping: 3.5,        // higher = snappier; this is a per-second rate
 };
 
 /**

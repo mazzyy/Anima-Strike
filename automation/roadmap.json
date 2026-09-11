@@ -42,7 +42,7 @@
         "little-fighters-js/renderer/src/config.js"
       ],
       "status": "done",
-      "note": "Built by hand. Camera follows the midpoint and eases back as the fighters separate, damped, with pitch and fov unchanged."
+      "note": "Extend the existing camera update to follow the fighters\u2019 midpoint on both X and Z, with arena-clamped tracking offsets and bounded pull-back along the camera\u2019s viewing axis. Damp tracking and pull-ba"
     },
     {
       "id": 4,

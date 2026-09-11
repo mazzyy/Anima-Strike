@@ -1,7 +1,7 @@
 /**
  * The stage: scene, lighting, camera and floor, matching Arena.tscn as closely
- * as three.js reasonably allows — same camera framing, same warm key light and
- * cool rim, same dark violet sky.
+ * as three.js reasonably allows — same base camera framing, same warm key
+ * light and cool rim, same dark violet sky.
  *
  * Also owns the hit sparks, which were spawned by Fighter.gd in Godot. Keeping
  * them here means the fighter has no opinion about rendering.
@@ -102,41 +102,62 @@ export function createArena(canvas) {
   }
 
   // -- camera tracking ----------------------------------------------------
-  const restX = ARENA.camera.x;
-  const restY = ARENA.camera.y;
-  const restZ = ARENA.camera.z;
+  const restPosition = camera.position.clone();
+  const trackingOffset = new THREE.Vector3();
+  // Camera-local +Z points backward. Dolly along this axis rather than using
+  // an arbitrary Y/Z ratio, so pulling back does not shift the shot's aim.
+  const pullDirection = new THREE.Vector3(0, 0, 1)
+    .applyQuaternion(camera.quaternion);
+  let currentPull = 0;
 
   function updateCamera(dt, fighters) {
     if (!CAMERA.track || !fighters || fighters.length < 2) return;
-    const [a, b] = fighters;
+    if (!Number.isFinite(dt) || dt <= 0) return;
 
+    const [a, b] = fighters;
     const midX = (a.position.x + b.position.x) / 2;
+    const midZ = (a.position.z + b.position.z) / 2;
     const separation = Math.hypot(
       a.position.x - b.position.x,
       a.position.z - b.position.z,
     );
 
-    // Pull back only once they are further apart than a comfortable spacing,
-    // so a normal exchange does not make the camera breathe in and out.
-    const excess = Math.max(separation - CAMERA.restSeparation, 0);
-    const pull = Math.min(excess * CAMERA.zoomPerUnit, CAMERA.maxPull);
-
+    // Clamp the tracking centre inside the arena. The camera itself keeps its
+    // original elevated, outside-the-ring offset from that centre.
+    const limitX = Math.min(CAMERA.maxOffsetX, ARENA.limitX);
+    const limitZ = Math.min(CAMERA.maxOffsetZ, ARENA.limitZ);
     const targetX = THREE.MathUtils.clamp(
-      midX * CAMERA.followX, -CAMERA.maxOffsetX, CAMERA.maxOffsetX);
-    const targetY = restY + pull * 0.35;
-    const targetZ = restZ + pull;
+      midX * CAMERA.followX, -limitX, limitX,
+    );
+    const targetZ = THREE.MathUtils.clamp(
+      midZ * CAMERA.followZ, -limitZ, limitZ,
+    );
 
-    // Frame-rate independent damping: the fraction of the remaining distance
-    // to cover this frame, derived from a per-second rate.
+    // A dead zone avoids breathing during close exchanges. Nonnegative pull
+    // means tracking can never zoom closer than the original framing.
+    const targetPull = THREE.MathUtils.clamp(
+      (separation - CAMERA.restSeparation) * CAMERA.zoomPerUnit,
+      0,
+      CAMERA.maxPull,
+    );
+
+    // Frame-rate independent damping without overshoot. Keeping tracking and
+    // dolly separate preserves their bounds throughout the transition.
     const k = 1 - Math.exp(-CAMERA.damping * dt);
-    camera.position.x += (targetX - camera.position.x) * k;
-    camera.position.y += (targetY - camera.position.y) * k;
-    camera.position.z += (targetZ - camera.position.z) * k;
-    // Pitch and fov deliberately untouched.
+    trackingOffset.x += (targetX - trackingOffset.x) * k;
+    trackingOffset.z += (targetZ - trackingOffset.z) * k;
+    currentPull += (targetPull - currentPull) * k;
+
+    camera.position.copy(restPosition)
+      .add(trackingOffset)
+      .addScaledVector(pullDirection, currentPull);
+    // Pitch and field of view deliberately untouched; no lookAt().
   }
 
   function resetCamera() {
-    camera.position.set(restX, restY, restZ);
+    trackingOffset.set(0, 0, 0);
+    currentPull = 0;
+    camera.position.copy(restPosition);
   }
 
   function resize() {
