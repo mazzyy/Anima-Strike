@@ -164,6 +164,20 @@ export const ARENA = {
 
 export const HEALTH = { max: 100 };
 
+/**
+ * Defaults copied into each Fighter; constructor stats may override any field.
+ * jumpSpeed is vertical takeoff velocity, not horizontal airborne movement.
+ * defenceScale must be positive; damageScale may be zero.
+ */
+export const FIGHTER_STATS = {
+  maxHealth: HEALTH.max,
+  walkSpeed: MOVEMENT.walkSpeed,
+  runSpeed: MOVEMENT.runSpeed,
+  jumpSpeed: MOVEMENT.jumpVelocity,
+  damageScale: 1,
+  defenceScale: 1,
+};
+
 /** Match structure. A round ends on a KO or when the clock runs out. */
 export const ROUNDS = {
   seconds: 60,

@@ -16,7 +16,7 @@
 
 import * as THREE from 'three';
 import {
-  MOVEMENT, COMBAT, BODY, ARENA, HEALTH,
+  MOVEMENT, COMBAT, BODY, ARENA, HEALTH, FIGHTER_STATS,
   STATE_CLIP, LOOPING_STATES, MODEL_YAW_OFFSET,
 } from './config.js';
 
@@ -79,11 +79,19 @@ export class Fighter {
    * @param {object}  opts.controller       { move(), pressed(action), held(action) }
    * @param {object}  opts.spawn            { x, y, z }
    * @param {string}  opts.name
+   * @param {object}  [opts.stats]          partial overrides of FIGHTER_STATS
+   * @param {number}  [opts.stats.maxHealth]
+   * @param {number}  [opts.stats.walkSpeed]
+   * @param {number}  [opts.stats.runSpeed]
+   * @param {number}  [opts.stats.jumpSpeed] vertical takeoff velocity
+   * @param {number}  [opts.stats.damageScale] outgoing damage multiplier
+   * @param {number}  [opts.stats.defenceScale] positive incoming damage divisor
    * @param {(pos: THREE.Vector3, color: number) => void} [opts.onHitEffect]
    * @param {(name: string) => void} [opts.onSound]
    */
   constructor({
-    model, animator, controller, spawn, name = 'Fighter', onHitEffect, onSound,
+    model, animator, controller, spawn, name = 'Fighter', stats = {},
+    onHitEffect, onSound,
   }) {
     this.name = name;
     this.model = model;
@@ -91,6 +99,16 @@ export class Fighter {
     this.controller = controller;
     this.onHitEffect = onHitEffect ?? (() => {});
     this.onSound = onSound ?? (() => {});
+
+    // Own a resolved copy, never the caller's roster entry or config object.
+    this.stats = {
+      maxHealth: stats.maxHealth ?? FIGHTER_STATS.maxHealth,
+      walkSpeed: stats.walkSpeed ?? FIGHTER_STATS.walkSpeed,
+      runSpeed: stats.runSpeed ?? FIGHTER_STATS.runSpeed,
+      jumpSpeed: stats.jumpSpeed ?? FIGHTER_STATS.jumpSpeed,
+      damageScale: stats.damageScale ?? FIGHTER_STATS.damageScale,
+      defenceScale: stats.defenceScale ?? FIGHTER_STATS.defenceScale,
+    };
 
     this.position = new THREE.Vector3(spawn.x, spawn.y, spawn.z);
     this.velocity = new THREE.Vector3();
@@ -102,13 +120,13 @@ export class Fighter {
     this.stateTime = 0;
     this.onFloor = false;
 
-    this.health = new HealthComponent();
+    this.health = new HealthComponent(this.stats.maxHealth);
     this.health.onDied = () => this.#enterState(State.KO);
 
     // Per-swing values, set when a swing state is entered.
     this.hitboxLive = false;
     this.attackKnocksDown = false;
-    this.attackDamage = COMBAT.attackDamage;
+    this.attackDamage = COMBAT.attackDamage * this.stats.damageScale;
     this.attackKnockback = COMBAT.knockbackForce;
     this.dropkickConnected = false;
     this.swingLength = COMBAT.attackDuration;
@@ -262,7 +280,7 @@ export class Fighter {
       return;
     }
     if (this.#pressed('jump') && this.onFloor) {
-      this.velocity.y = MOVEMENT.jumpVelocity;
+      this.velocity.y = this.stats.jumpSpeed;
       if (moving) {
         this.velocity.x = dir.x * MOVEMENT.jumpMoveSpeed;
         this.velocity.z = dir.y * MOVEMENT.jumpMoveSpeed;
@@ -277,7 +295,7 @@ export class Fighter {
     }
 
     const running = this.#held('run');
-    const targetSpeed = running ? MOVEMENT.runSpeed : MOVEMENT.walkSpeed;
+    const targetSpeed = running ? this.stats.runSpeed : this.stats.walkSpeed;
 
     if (moving) {
       this.velocity.x = moveToward(this.velocity.x, dir.x * targetSpeed, MOVEMENT.acceleration * dt);
@@ -426,9 +444,11 @@ export class Fighter {
       if (side === this.facingSign || side === 0) blocked = true;
     }
 
-    const finalDamage = blocked
+    // Preserve legacy chip rounding, then divide all received damage.
+    // Do not round again: defence can produce fractional health loss.
+    const finalDamage = (blocked
       ? Math.round(damage * COMBAT.blockDamageMult)
-      : damage;
+      : damage) / this.stats.defenceScale;
 
     // Count on the defender, only after invulnerability/block checks.
     // Record before applyDamage so a lethal hit also contributes.
@@ -568,6 +588,8 @@ export class Fighter {
         this.dropkickConnected = false;
         fallback = COMBAT.kickDuration;
       }
+      // Snapshot scaled damage once per swing; knockback is unaffected.
+      this.attackDamage *= this.stats.damageScale;
 
       const clip = STATE_CLIP[next];
       const clipLength = this.animator.has(clip) ? this.animator.length(clip) : fallback;

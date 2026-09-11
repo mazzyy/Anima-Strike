@@ -118,8 +118,8 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "The stats implementation and its tests are already present. The reported failures come from macOS AppleDouble metadata files (`._*.js`) being treated as JavaScript modules. Add a pretest cleanup that "
     },
     {
       "id": 10,

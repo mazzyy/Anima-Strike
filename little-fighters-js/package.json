@@ -8,6 +8,7 @@
     "postinstall": "node tools/setup-assets.mjs",
     "assets": "node tools/setup-assets.mjs",
     "start": "electron .",
+    "pretest": "node tools/clean-metadata.mjs",
     "test": "node --test tools/*.test.mjs",
     "dist": "electron-builder --mac --dir",
     "pack": "electron-builder --mac"
