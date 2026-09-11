@@ -1,11 +1,118 @@
 /**
- * Persistent renderer, camera and hit effects. Procedural map ownership is
- * separate, so changing stages never touches fighters or recreates WebGL.
+ * Persistent renderer, camera and pooled VFX. Maps have separate ownership.
  */
-
 import * as THREE from 'three';
 import { ARENA, CAMERA } from './config.js';
 import { buildMap } from './arenas.js';
+import { VFXSystem } from './vfx.js';
+
+/**
+ * Framing is solved from an unshaken camera. Camera-local shake is composed
+ * last, never fed back into tracking, pull-back, or KO push-in.
+ */
+export function createCameraRig(camera) {
+  camera.position.set(ARENA.camera.x, ARENA.camera.y, ARENA.camera.z);
+  camera.rotation.set(THREE.MathUtils.degToRad(ARENA.camera.pitchDeg), 0, 0);
+
+  const restPosition = camera.position.clone();
+  const trackingOffset = new THREE.Vector3();
+  const pullDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(camera.quaternion);
+  const inverseRotation = camera.quaternion.clone().invert();
+  const basePosition = new THREE.Vector3();
+  const corner = new THREE.Vector3();
+  const shakeLocal = new THREE.Vector3();
+  const appliedShake = new THREE.Vector3();
+  const unshakenPosition = camera.position.clone();
+  let currentPull = 0;
+  let currentPush = 0;
+  let lastFighters = null;
+
+  function composeShake() {
+    appliedShake.copy(shakeLocal).applyQuaternion(camera.quaternion);
+    camera.position.copy(unshakenPosition).add(appliedShake);
+    camera.updateMatrixWorld(true);
+  }
+
+  // Reconstruct from the exact unshaken position instead of repeatedly
+  // subtracting offsets. At zero there is no accumulated floating-point drift.
+  function setShake(offset) {
+    shakeLocal.copy(offset);
+    composeShake();
+  }
+
+  function requiredPull(fighters) {
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.getEffectiveFOV()) / 2);
+    const tanH = tanV * camera.aspect;
+    const usable = 1 - CAMERA.framePadding;
+    let pull = 0;
+    for (const fighter of fighters) {
+      const p = fighter.position;
+      for (const dx of [-CAMERA.frameRadius, CAMERA.frameRadius]) {
+        for (const dy of [0, CAMERA.frameHeight]) {
+          for (const dz of [-CAMERA.frameRadius, CAMERA.frameRadius]) {
+            corner.set(p.x + dx, p.y + dy, p.z + dz)
+              .sub(basePosition).applyQuaternion(inverseRotation);
+            pull = Math.max(
+              pull,
+              corner.z + Math.abs(corner.x) / (tanH * usable),
+              corner.z + Math.abs(corner.y) / (tanV * usable),
+              corner.z + camera.near,
+            );
+          }
+        }
+      }
+    }
+    return pull;
+  }
+
+  /** dt=0 performs a safety refit after resizing without advancing damping. */
+  function updateCamera(dt, fighters = lastFighters, pushIn = 0) {
+    if (!Number.isFinite(dt) || dt < 0) return;
+    lastFighters = fighters;
+    const k = 1 - Math.exp(-CAMERA.damping * dt);
+    const tracking = CAMERA.track && fighters && fighters.length >= 2;
+    if (tracking) {
+      const [a, b] = fighters;
+      const midX = (a.position.x + b.position.x) / 2;
+      const midZ = (a.position.z + b.position.z) / 2;
+      const separation = Math.hypot(
+        a.position.x - b.position.x, a.position.z - b.position.z,
+      );
+      const limitX = Math.min(CAMERA.maxOffsetX, ARENA.limitX);
+      const limitZ = Math.min(CAMERA.maxOffsetZ, ARENA.limitZ);
+      const targetX = THREE.MathUtils.clamp(midX * CAMERA.followX, -limitX, limitX);
+      const targetZ = THREE.MathUtils.clamp(midZ * CAMERA.followZ, -limitZ, limitZ);
+      const targetPull = THREE.MathUtils.clamp(
+        (separation - CAMERA.restSeparation) * CAMERA.zoomPerUnit, 0, CAMERA.maxPull,
+      );
+      trackingOffset.x += (targetX - trackingOffset.x) * k;
+      trackingOffset.z += (targetZ - trackingOffset.z) * k;
+      currentPull += (targetPull - currentPull) * k;
+    }
+    const targetPush = Number.isFinite(pushIn)
+      ? THREE.MathUtils.clamp(pushIn, 0, CAMERA.koPush) : 0;
+    currentPush += (targetPush - currentPush) * k;
+    basePosition.copy(restPosition).add(trackingOffset);
+    if (tracking) {
+      currentPull = Math.max(currentPull, requiredPull(fighters) + currentPush);
+    }
+    unshakenPosition.copy(basePosition)
+      .addScaledVector(pullDirection, currentPull - currentPush);
+    composeShake();
+  }
+
+  function resetCamera() {
+    trackingOffset.set(0, 0, 0);
+    shakeLocal.set(0, 0, 0);
+    currentPull = currentPush = 0;
+    lastFighters = null;
+    unshakenPosition.copy(restPosition);
+    composeShake();
+  }
+
+  resetCamera();
+  return { updateCamera, resetCamera, setShake };
+}
 
 export function createArena(canvas, mapId) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -18,129 +125,23 @@ export function createArena(canvas, mapId) {
   const scene = new THREE.Scene();
   let map = buildMap(scene, mapId);
   let disposed = false;
-
-  // Depth range, not defaults. 0.1-to-500 is a 5000:1 ratio, which spends
-  // almost all of the depth buffer's precision on the first metre in front of
-  // the lens — where nothing ever is. The camera sits ~13 units back and the
-  // nearest geometry is ~10 units away, so starting at 1 costs nothing and
-  // buys back the precision that flat ground detail needs.
   const camera = new THREE.PerspectiveCamera(
-    ARENA.camera.fov,
-    window.innerWidth / window.innerHeight,
-    ARENA.camera.near,
-    ARENA.camera.far,
+    ARENA.camera.fov, window.innerWidth / window.innerHeight,
+    ARENA.camera.near, ARENA.camera.far,
   );
-  camera.position.set(ARENA.camera.x, ARENA.camera.y, ARENA.camera.z);
-  camera.rotation.x = THREE.MathUtils.degToRad(ARENA.camera.pitchDeg);
+  const { updateCamera, resetCamera, setShake } = createCameraRig(camera);
+  const vfx = new VFXSystem(scene, { onShake: setShake });
 
-  // -- hit sparks ---------------------------------------------------------
-  const sparks = [];
-  const sparkGeo = new THREE.SphereGeometry(0.22, 12, 10);
-
+  // Compatibility for existing arena consumers. Main uses the richer event API.
   function spawnHitEffect(position, color) {
-    if (disposed) return;
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 });
-    const mesh = new THREE.Mesh(sparkGeo, mat);
-    mesh.position.copy(position);
-    mesh.scale.setScalar(0.4);
-    scene.add(mesh);
-    sparks.push({ mesh, mat, t: 0, life: 0.18 });
+    return vfx.emit('impact', { position, color, phase: 'hit' });
   }
+  function updateSparks(dt) { vfx.update(dt); }
+  function clearSparks() { vfx.clear(); }
 
-  function clearSparks() {
-    for (const spark of sparks) {
-      spark.mesh.removeFromParent();
-      spark.mat.dispose();
-    }
-    sparks.length = 0;
-  }
-
-  function updateSparks(dt) {
-    for (let i = sparks.length - 1; i >= 0; i--) {
-      const s = sparks[i];
-      s.t += dt;
-      const k = Math.min(s.t / s.life, 1);
-      s.mesh.scale.setScalar(0.4 + k * 1.2);
-      s.mat.opacity = 0.95 * (1 - k);
-      if (k >= 1) {
-        scene.remove(s.mesh);
-        s.mat.dispose();
-        sparks.splice(i, 1);
-      }
-    }
-  }
-
-  // -- camera tracking ----------------------------------------------------
-  const restPosition = camera.position.clone();
-  const trackingOffset = new THREE.Vector3();
-  // Camera-local +Z points backward. Dolly along this axis rather than using
-  // an arbitrary Y/Z ratio, so dollying does not shift the shot's aim.
-  const pullDirection = new THREE.Vector3(0, 0, 1)
-    .applyQuaternion(camera.quaternion);
-  let currentPull = 0;
-  let currentPush = 0;
-
-  /** pushIn is a presentation offset in world units, independent of tracking. */
-  function updateCamera(dt, fighters, pushIn = 0) {
-    if (!Number.isFinite(dt) || dt <= 0) return;
-
-    const k = 1 - Math.exp(-CAMERA.damping * dt);
-
-    if (CAMERA.track && fighters && fighters.length >= 2) {
-      const [a, b] = fighters;
-      const midX = (a.position.x + b.position.x) / 2;
-      const midZ = (a.position.z + b.position.z) / 2;
-      const separation = Math.hypot(
-        a.position.x - b.position.x,
-        a.position.z - b.position.z,
-      );
-
-      // Clamp the tracking centre inside the arena. The camera itself keeps
-      // its original elevated, outside-the-ring offset from that centre.
-      const limitX = Math.min(CAMERA.maxOffsetX, ARENA.limitX);
-      const limitZ = Math.min(CAMERA.maxOffsetZ, ARENA.limitZ);
-      const targetX = THREE.MathUtils.clamp(
-        midX * CAMERA.followX, -limitX, limitX,
-      );
-      const targetZ = THREE.MathUtils.clamp(
-        midZ * CAMERA.followZ, -limitZ, limitZ,
-      );
-
-      // Ordinary tracking never zooms closer than the original framing.
-      const targetPull = THREE.MathUtils.clamp(
-        (separation - CAMERA.restSeparation) * CAMERA.zoomPerUnit,
-        0,
-        CAMERA.maxPull,
-      );
-
-      trackingOffset.x += (targetX - trackingOffset.x) * k;
-      trackingOffset.z += (targetZ - trackingOffset.z) * k;
-      currentPull += (targetPull - currentPull) * k;
-    }
-
-    // The explicit presentation dolly also works with tracking disabled.
-    const targetPush = Number.isFinite(pushIn)
-      ? THREE.MathUtils.clamp(pushIn, 0, CAMERA.koPush)
-      : 0;
-    currentPush += (targetPush - currentPush) * k;
-
-    camera.position.copy(restPosition)
-      .add(trackingOffset)
-      .addScaledVector(pullDirection, currentPull - currentPush);
-    // Pitch and field of view deliberately untouched; no lookAt().
-  }
-
-  function resetCamera() {
-    trackingOffset.set(0, 0, 0);
-    currentPull = 0;
-    currentPush = 0;
-    camera.position.copy(restPosition);
-  }
-
-  /** Replace only the map; all maps occupy exactly one scene child. */
   function setMap(nextMapId) {
     if (disposed) return;
-    clearSparks();
+    vfx.clear();
     map.dispose();
     map = buildMap(scene, nextMapId);
     resetCamera();
@@ -148,10 +149,11 @@ export function createArena(canvas, mapId) {
   }
 
   function resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = Math.max(1, window.innerWidth);
+    const h = Math.max(1, window.innerHeight);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    updateCamera(0);
     renderer.setSize(w, h, false);
   }
   resize();
@@ -161,17 +163,15 @@ export function createArena(canvas, mapId) {
     if (disposed) return;
     disposed = true;
     window.removeEventListener('resize', resize);
-    clearSparks();
+    vfx.dispose();
     map.dispose();
-    sparkGeo.dispose();
     renderer.dispose();
   }
 
   return {
-    renderer, scene, camera,
+    renderer, scene, camera, vfx,
     get mapId() { return map.mapId; },
-    setMap, dispose,
-    spawnHitEffect, updateSparks, clearSparks,
+    setMap, dispose, spawnHitEffect, updateSparks, clearSparks,
     updateCamera, resetCamera,
     render: () => {
       if (!disposed) renderer.render(scene, camera);

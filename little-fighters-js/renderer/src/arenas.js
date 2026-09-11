@@ -1,12 +1,9 @@
 /**
- * Procedural stages. Each build owns one scene child and all resources beneath
- * it. No textures, external assets, browser APIs, or renderer are required.
+ * Procedural stages. Each build owns one scene child and all its resources.
+ * No textures, external assets, browser APIs, or renderer are required.
  *
- * buildMap() and MAPS[n].build() return a callable disposer. It also exposes
- * .dispose() and .mapId for callers that prefer an object-style handle.
- *
- * Neon reflections are deliberately stylized, broken pools of signage colour,
- * not a second rendering of the scene.
+ * buildMap() and MAPS[n].build() return a callable disposer, also exposed as
+ * .dispose(). Repeated geometry/material pairs become static instanced batches.
  */
 
 import * as THREE from 'three';
@@ -16,14 +13,43 @@ function fraction(value) {
   return value - Math.floor(value);
 }
 
-// Stable decoration without sharing or changing the game's random stream.
+// Stable decoration without changing the game's random stream.
 function noise(index) {
   return fraction(Math.sin(index * 127.1 + 311.7) * 43758.5453);
+}
+
+/**
+ * Distribute whole props across the width, never scale a prop to fill a cell.
+ * Padding reserves half a prop at each end; jitter cannot accumulate.
+ */
+function repeatXs(spacing, padding = 0, seed = 0) {
+  const span = Math.max(0, MAP_ART.floorWidth - padding * 2);
+  const count = Math.max(1, Math.ceil(span / spacing));
+  const cell = span / count;
+  return Array.from({ length: count }, (_, index) => (
+    -span / 2 + (index + 0.5) * cell
+      + (noise(seed + index) - 0.5) * cell * MAP_ART.repeatJitter
+  ));
+}
+
+function variation(seed) {
+  return 1 + (noise(seed) - 0.5) * MAP_ART.detailVariation;
+}
+
+// Evenly distributed accent lights: geometry count must not multiply lights.
+function hasAccentLight(index, count) {
+  const lights = Math.min(count, MAP_ART.maxPropLights);
+  for (let slot = 0; slot < lights; slot++) {
+    if (index === Math.floor((slot + 0.5) * count / lights)) return true;
+  }
+  return false;
 }
 
 function createKit(root) {
   const geometries = new Map();
   const materials = new Map();
+  const batches = new Map();
+  const instances = new Set();
 
   function geometry(kind) {
     if (!geometries.has(kind)) {
@@ -33,9 +59,7 @@ function createKit(root) {
           1, MAP_ART.radialSegments, MAP_ART.sphereRows,
         );
       } else if (kind === 'column') {
-        result = new THREE.CylinderGeometry(
-          1, 1, 1, MAP_ART.radialSegments,
-        );
+        result = new THREE.CylinderGeometry(1, 1, 1, MAP_ART.radialSegments);
       } else if (kind === 'plane') {
         result = new THREE.PlaneGeometry(1, 1);
       } else {
@@ -49,12 +73,7 @@ function createKit(root) {
   function material(color, options = {}, basic = false) {
     const properties = basic
       ? { color, toneMapped: false, ...options }
-      : {
-        color,
-        roughness: MAP_ART.roughness,
-        metalness: 0,
-        ...options,
-      };
+      : { color, roughness: MAP_ART.roughness, metalness: 0, ...options };
     const key = JSON.stringify([basic, properties]);
     if (!materials.has(key)) {
       materials.set(key, basic
@@ -64,14 +83,18 @@ function createKit(root) {
     return materials.get(key);
   }
 
+  // Return a staging transform so callers can rotate a patch before finalize().
+  // There is no temporary Mesh (or scene child) per tile.
   function mesh(kind, mat, x, y, z, sx, sy, sz) {
-    const object = new THREE.Mesh(geometry(kind), mat);
-    object.position.set(x, ARENA.floorY + y, z);
-    object.scale.set(sx, sy, sz);
-    object.castShadow = !mat.isMeshBasicMaterial && !mat.transparent;
-    object.receiveShadow = !mat.isMeshBasicMaterial;
-    root.add(object);
-    return object;
+    if (!batches.has(mat)) batches.set(mat, new Map());
+    const kinds = batches.get(mat);
+    if (!kinds.has(kind)) kinds.set(kind, []);
+
+    const transform = new THREE.Object3D();
+    transform.position.set(x, ARENA.floorY + y, z);
+    transform.scale.set(sx, sy, sz);
+    kinds.get(kind).push(transform);
+    return transform;
   }
 
   function box(mat, x, y, z, width, height, depth) {
@@ -79,9 +102,9 @@ function createKit(root) {
   }
 
   function patch(mat, x, y, z, width, depth) {
-    const object = mesh('plane', mat, x, y, z, width, depth, 1);
-    object.rotation.x = -Math.PI / 2;
-    return object;
+    const transform = mesh('plane', mat, x, y, z, width, depth, 1);
+    transform.rotation.x = -Math.PI / 2;
+    return transform;
   }
 
   function point(color, intensity, distance, x, y, z) {
@@ -91,14 +114,50 @@ function createKit(root) {
     return light;
   }
 
-  function dispose() {
-    for (const item of geometries.values()) item.dispose();
-    for (const item of materials.values()) item.dispose();
-    geometries.clear();
-    materials.clear();
+  function finalize() {
+    for (const [mat, kinds] of batches) {
+      for (const [kind, transforms] of kinds) {
+        const geo = geometry(kind);
+        let object;
+        if (transforms.length > 1) {
+          object = new THREE.InstancedMesh(geo, mat, transforms.length);
+          instances.add(object);
+          transforms.forEach((transform, index) => {
+            transform.updateMatrix();
+            object.setMatrixAt(index, transform.matrix);
+          });
+          object.instanceMatrix.needsUpdate = true;
+          object.computeBoundingBox();
+          object.computeBoundingSphere();
+          object.name = `${kind}:instances`;
+        } else {
+          const [transform] = transforms;
+          object = new THREE.Mesh(geo, mat);
+          object.position.copy(transform.position);
+          object.quaternion.copy(transform.quaternion);
+          object.scale.copy(transform.scale);
+        }
+        object.castShadow = !mat.isMeshBasicMaterial && !mat.transparent;
+        object.receiveShadow = !mat.isMeshBasicMaterial;
+        root.add(object);
+      }
+    }
+    batches.clear();
   }
 
-  return { material, mesh, box, patch, point, dispose };
+  function dispose() {
+    // InstancedMesh.dispose releases instance-specific renderer allocations.
+    // Shared geometry/material ownership remains here, disposed once each.
+    for (const item of instances) item.dispose();
+    for (const item of geometries.values()) item.dispose();
+    for (const item of materials.values()) item.dispose();
+    instances.clear();
+    geometries.clear();
+    materials.clear();
+    batches.clear();
+  }
+
+  return { material, mesh, box, patch, point, finalize, dispose };
 }
 
 function addLighting(root, theme) {
@@ -111,13 +170,13 @@ function addLighting(root, theme) {
     } else {
       light = new THREE.DirectionalLight(spec.color, spec.intensity);
       light.position.set(...spec.position);
-      light.position.y += ARENA.floorY;
-      light.target.position.y = ARENA.floorY;
-      root.add(light.target);
 
       if (spec.shadow) {
-        light.castShadow = true;
         const settings = MAP_ART.shadow;
+        // Move along the same direction so the entire wide floor is in front
+        // of the shadow camera, not just enlarge its orthographic rectangle.
+        light.position.multiplyScalar(settings.lightDistanceScale);
+        light.castShadow = true;
         light.shadow.mapSize.set(settings.size, settings.size);
         Object.assign(light.shadow.camera, {
           near: settings.near,
@@ -127,24 +186,28 @@ function addLighting(root, theme) {
           top: settings.extent,
           bottom: -settings.extent,
         });
+        light.shadow.camera.updateProjectionMatrix();
         light.shadow.bias = settings.bias;
       }
+
+      light.position.y += ARENA.floorY;
+      light.target.position.y = ARENA.floorY;
+      root.add(light.target);
     }
     root.add(light);
   }
 }
 
 function addFloor(kit, theme) {
-  const { floorSize, floorThickness, deckSink } = MAP_ART;
-  // Top face at -deckSink, NOT at 0. Decking (tiles, planks) keeps y=0, so the
-  // two never share a plane and never fight for pixels. See MAP_ART.deckSink.
+  const { floorWidth, floorDepth, floorThickness, deckSink } = MAP_ART;
+  // Slab top stays below the y=0 decking, never coplanar with it.
   kit.box(
     kit.material(theme.floorColor, {
       roughness: theme.roughness,
       metalness: theme.metalness,
     }),
     0, -deckSink - floorThickness / 2, 0,
-    floorSize, floorThickness, floorSize,
+    floorWidth, floorThickness, floorDepth,
   );
 }
 
@@ -166,23 +229,24 @@ function addBoundary(kit, theme) {
 }
 
 function addTiles(kit, theme, settings) {
-  const count = Math.round(MAP_ART.floorSize / settings.tileSize);
-  const size = MAP_ART.floorSize / count;
-  const half = MAP_ART.floorSize / 2;
+  const countX = Math.max(1, Math.round(MAP_ART.floorWidth / settings.tileSize));
+  const countZ = Math.max(1, Math.round(MAP_ART.floorDepth / settings.tileSize));
+  const sizeX = MAP_ART.floorWidth / countX;
+  const sizeZ = MAP_ART.floorDepth / countZ;
   const mats = settings.colors.map((color) => kit.material(color, {
     roughness: theme.roughness,
     metalness: theme.metalness,
   }));
 
-  for (let x = 0; x < count; x++) {
-    for (let z = 0; z < count; z++) {
-      const mat = mats[Math.floor(noise(x * count + z) * mats.length)];
+  for (let x = 0; x < countX; x++) {
+    for (let z = 0; z < countZ; z++) {
+      const mat = mats[Math.floor(noise(x * countZ + z) * mats.length)];
       kit.box(
         mat,
-        -half + (x + 0.5) * size,
+        -MAP_ART.floorWidth / 2 + (x + 0.5) * sizeX,
         -settings.thickness / 2,
-        -half + (z + 0.5) * size,
-        size - settings.gap, settings.thickness, size - settings.gap,
+        -MAP_ART.floorDepth / 2 + (z + 0.5) * sizeZ,
+        sizeX - settings.gap, settings.thickness, sizeZ - settings.gap,
       );
     }
   }
@@ -190,24 +254,27 @@ function addTiles(kit, theme, settings) {
 
 function buildDojo(kit, theme) {
   const d = theme.decor;
-  const half = MAP_ART.floorSize / 2;
+  const halfX = MAP_ART.floorWidth / 2;
   const wood = d.woodColors.map((color) => kit.material(color));
-  const rows = Math.round(MAP_ART.floorSize / d.boardWidth);
-  const width = MAP_ART.floorSize / rows;
+  const rows = Math.max(1, Math.round(MAP_ART.floorDepth / d.boardWidth));
+  const width = MAP_ART.floorDepth / rows;
 
+  // Planks retain authored lengths, with alternating seams and clipped ends.
   for (let row = 0; row < rows; row++) {
     const offset = (row % 2) * d.boardLength / 2;
-    for (let start = -half - offset; start < half; start += d.boardLength) {
-      const left = Math.max(-half, start);
-      const right = Math.min(half, start + d.boardLength);
+    let column = 0;
+    for (let start = -halfX - offset; start < halfX; start += d.boardLength) {
+      const left = Math.max(-halfX, start);
+      const right = Math.min(halfX, start + d.boardLength);
+      const mat = wood[Math.floor(noise(row * 1000 + column++) * wood.length)];
       kit.box(
-        wood[(row + Math.floor((start + half + offset) / d.boardLength)) % wood.length],
-        -half + (row + 0.5) * width,
-        -d.boardThickness / 2,
+        mat,
         (left + right) / 2,
-        width - d.boardGap,
-        d.boardThickness,
+        -d.boardThickness / 2,
+        -MAP_ART.floorDepth / 2 + (row + 0.5) * width,
         right - left - d.boardGap,
+        d.boardThickness,
+        width - d.boardGap,
       );
     }
   }
@@ -219,33 +286,37 @@ function buildDojo(kit, theme) {
     roughness: 1,
   });
 
-  for (const x of d.screenXs) {
+  repeatXs(d.screenSpacing, 0, 100).forEach((x, index) => {
+    const height = d.screenHeight * variation(index + 150);
     kit.box(
-      paper, x, d.screenHeight / 2, d.screenZ,
-      d.screenWidth, d.screenHeight, d.frameWidth,
+      paper, x, height / 2, d.screenZ,
+      d.screenWidth, height, d.frameWidth,
     );
     for (let i = 0; i <= d.screenColumns; i++) {
       kit.box(
         frame,
         x - d.screenWidth / 2 + i * d.screenWidth / d.screenColumns,
-        d.screenHeight / 2, d.screenZ + d.frameWidth,
-        d.frameWidth, d.screenHeight, d.frameWidth,
+        height / 2, d.screenZ + d.frameWidth,
+        d.frameWidth, height, d.frameWidth,
       );
     }
     for (let i = 0; i <= d.screenRows; i++) {
       kit.box(
-        frame, x, i * d.screenHeight / d.screenRows,
+        frame, x, i * height / d.screenRows,
         d.screenZ + d.frameWidth,
         d.screenWidth, d.frameWidth, d.frameWidth,
       );
     }
-  }
+  });
 
   const lantern = kit.material(d.lanternColor, {
     emissive: d.lanternColor,
     emissiveIntensity: d.lanternGlow,
   });
-  for (const [x, y, z] of d.lanterns) {
+  const lanternXs = repeatXs(d.lanternSpacing, d.lanternRadius, 200);
+  lanternXs.forEach((x, index) => {
+    const y = d.lanternY * variation(index + 250);
+    const z = d.lanternZ;
     kit.box(
       frame, x, y + d.lanternRadius + d.cordLength / 2, z,
       d.cordWidth, d.cordLength, d.cordWidth,
@@ -261,62 +332,69 @@ function buildDojo(kit, theme) {
         d.lanternRadius * d.capScale,
       );
     }
-    kit.point(d.lanternColor, d.lightIntensity, d.lightDistance, x, y, z);
-  }
+    if (hasAccentLight(index, lanternXs.length)) {
+      kit.point(d.lanternColor, d.lightIntensity, d.lightDistance, x, y, z);
+    }
+  });
 }
 
 function buildStreet(kit, theme) {
   const d = theme.decor;
   const building = kit.material(d.buildingColor);
   const signBacking = kit.material(d.signBackingColor);
+  const signXs = repeatXs(d.signSpacing, 0, 300);
 
-  d.signXs.forEach((x, index) => {
-    const color = d.signColors[index % d.signColors.length];
+  signXs.forEach((x, index) => {
+    const color = d.signColors[Math.floor(noise(index + 350) * d.signColors.length)];
     const neon = kit.material(color, {
       emissive: color,
       emissiveIntensity: d.signGlow,
       roughness: d.signRoughness,
     });
+    const height = d.buildingHeight * variation(index + 400);
+    const signY = d.signY * variation(index + 450);
 
     kit.box(
-      building, x, d.buildingHeight / 2, d.buildingZ,
-      d.buildingWidth, d.buildingHeight, d.buildingDepth,
+      building, x, height / 2, d.buildingZ,
+      d.buildingWidth, height, d.buildingDepth,
     );
     kit.box(
-      signBacking, x, d.signY, d.signZ,
+      signBacking, x, signY, d.signZ,
       d.signWidth, d.signHeight, d.signDepth,
     );
 
-    // Lit borders and abstract, geometric lettering.
     for (const sign of [-1, 1]) {
       kit.box(
-        neon, x, d.signY + sign * d.signHeight / 2, d.signZ + d.signDepth,
+        neon, x, signY + sign * d.signHeight / 2, d.signZ + d.signDepth,
         d.signWidth, d.strokeWidth, d.strokeWidth,
       );
       kit.box(
-        neon, x + sign * d.signWidth / 2, d.signY, d.signZ + d.signDepth,
+        neon, x + sign * d.signWidth / 2, signY, d.signZ + d.signDepth,
         d.strokeWidth, d.signHeight, d.strokeWidth,
       );
     }
     for (let glyph = 0; glyph < d.glyphCount; glyph++) {
       const gx = x + (glyph - (d.glyphCount - 1) / 2) * d.glyphSpacing;
+      const up = noise(index * d.glyphCount + glyph + 500) > 0.5 ? 1 : -1;
       kit.box(
-        neon, gx, d.signY, d.signZ + d.signDepth,
+        neon, gx, signY, d.signZ + d.signDepth,
         d.strokeWidth, d.glyphHeight, d.strokeWidth,
       );
       kit.box(
-        neon, gx, d.signY + (glyph % 2 ? -1 : 1) * d.glyphHeight / 2,
-        d.signZ + d.signDepth,
+        neon, gx, signY + up * d.glyphHeight / 2, d.signZ + d.signDepth,
         d.glyphWidth, d.strokeWidth, d.strokeWidth,
       );
     }
 
-    kit.point(
-      color, d.lightIntensity, d.lightDistance,
-      x, d.signY, d.signZ + d.lightOffset,
-    );
+    if (hasAccentLight(index, signXs.length)) {
+      kit.point(
+        color, d.lightIntensity, d.lightDistance,
+        x, signY, d.signZ + d.lightOffset,
+      );
+    }
 
-    // Broken, widening reflection streaks lie just above the asphalt.
+    // At most reflectionRows * palette size materials/batches, independent
+    // of stage width. Transparent additive strips do not need depth sorting.
     for (let row = 0; row < d.reflectionRows; row++) {
       const t = row / d.reflectionRows;
       const ripple = noise(index * d.reflectionRows + row);
@@ -338,12 +416,22 @@ function buildStreet(kit, theme) {
   });
 
   const curb = kit.material(d.curbColor);
+  // End curbs run toward the camera: their length is floorDepth, not width.
   for (const sign of [-1, 1]) {
     kit.box(
-      curb, sign * d.curbX, d.curbHeight / 2, 0,
-      d.curbWidth, d.curbHeight, MAP_ART.floorSize,
+      curb, sign * (MAP_ART.floorWidth / 2 - d.curbWidth / 2),
+      d.curbHeight / 2, 0,
+      d.curbWidth, d.curbHeight, MAP_ART.floorDepth,
     );
   }
+  // Repeated curb stones also carry the street frontage across the full width.
+  repeatXs(d.curbLength, 0, 550).forEach((x, index) => {
+    const height = d.curbHeight * variation(index + 600);
+    kit.box(
+      curb, x, height / 2, -MAP_ART.floorDepth / 2,
+      d.curbLength - d.curbGap, height, d.curbWidth,
+    );
+  });
 
   const puddle = kit.material(d.puddleColor, {
     roughness: d.puddleRoughness,
@@ -352,16 +440,17 @@ function buildStreet(kit, theme) {
     opacity: d.puddleOpacity,
     depthWrite: false,
   });
-  for (let i = 0; i < d.puddles; i++) {
-    const patch = kit.patch(
+  const puddles = Math.ceil(MAP_ART.floorWidth * MAP_ART.floorDepth / d.puddleArea);
+  for (let i = 0; i < puddles; i++) {
+    const transform = kit.patch(
       puddle,
-      (noise(i + 100) - 0.5) * d.puddleSpread,
+      (noise(i + 700) - 0.5) * (MAP_ART.floorWidth - d.puddleWidth * 2),
       MAP_ART.surfaceLift / 2,
-      (noise(i + 200) - 0.5) * d.puddleSpread,
-      d.puddleWidth * (1 + noise(i + 300)),
+      (noise(i + 800) - 0.5) * (MAP_ART.floorDepth - d.puddleWidth * 2),
+      d.puddleWidth * (1 + noise(i + 900)),
       d.puddleDepth,
     );
-    patch.rotation.z = noise(i + 400) * Math.PI;
+    transform.rotation.z = noise(i + 1000) * Math.PI;
   }
 }
 
@@ -371,32 +460,48 @@ function buildTemple(kit, theme) {
   const stone = kit.material(d.pillarColor);
   const trim = kit.material(d.trimColor);
 
-  for (const x of d.pillarXs) {
-    for (const z of d.pillarZs) {
-      kit.box(
-        trim, x, d.baseHeight / 2, z,
-        d.baseWidth, d.baseHeight, d.baseWidth,
-      );
-      kit.mesh(
-        'column', stone, x, d.baseHeight + d.pillarHeight / 2, z,
-        d.pillarRadius, d.pillarHeight, d.pillarRadius,
-      );
-      kit.box(
-        trim, x, d.baseHeight + d.pillarHeight + d.capHeight / 2, z,
-        d.baseWidth, d.capHeight, d.baseWidth,
-      );
-    }
-  }
-
-  for (let step = 0; step < d.steps; step++) {
+  function pillar(x, z, seed) {
+    const height = d.pillarHeight * variation(seed);
     kit.box(
-      trim, 0, d.stepHeight * (step + 1) / 2,
-      d.stepsZ - step * d.stepDepth / 2,
-      d.stepsWidth - step * d.stepInset,
-      d.stepHeight * (step + 1),
-      d.stepsDepth - step * d.stepDepth,
+      trim, x, d.baseHeight / 2, z,
+      d.baseWidth, d.baseHeight, d.baseWidth,
+    );
+    kit.mesh(
+      'column', stone, x, d.baseHeight + height / 2, z,
+      d.pillarRadius, height, d.pillarRadius,
+    );
+    kit.box(
+      trim, x, d.baseHeight + height + d.capHeight / 2, z,
+      d.baseWidth, d.capHeight, d.baseWidth,
     );
   }
+
+  repeatXs(d.pillarSpacing, d.baseWidth / 2, 1100).forEach((x, index) => {
+    pillar(x, d.pillarZ, index + 1150);
+  });
+  // Side columns remain outside the collision strip; no invisible obstacles
+  // are introduced by repeating columns through the playable interior.
+  for (const sign of [-1, 1]) {
+    d.sidePillarZs.forEach((z, index) => {
+      pillar(
+        sign * (MAP_ART.floorWidth / 2 + d.baseWidth / 2),
+        z, index + (sign + 1) * 100 + 1200,
+      );
+    });
+  }
+
+  repeatXs(d.stepsSpacing, 0, 1300).forEach((x, index) => {
+    const z = d.stepsZ - noise(index + 1350) * d.stepDepth;
+    for (let step = 0; step < d.steps; step++) {
+      kit.box(
+        trim, x, d.stepHeight * (step + 1) / 2,
+        z - step * d.stepDepth / 2,
+        d.stepsWidth - step * d.stepInset,
+        d.stepHeight * (step + 1),
+        d.stepsDepth - step * d.stepDepth,
+      );
+    }
+  });
 }
 
 function buildRooftop(kit, theme) {
@@ -405,20 +510,21 @@ function buildRooftop(kit, theme) {
   const concrete = kit.material(d.parapetColor);
 
   kit.box(
-    concrete, 0, d.parapetHeight / 2, -d.parapetOffset,
-    MAP_ART.floorSize, d.parapetHeight, d.parapetWidth,
+    concrete, 0, d.parapetHeight / 2,
+    -MAP_ART.floorDepth / 2 + d.parapetInset,
+    MAP_ART.floorWidth, d.parapetHeight, d.parapetWidth,
   );
   for (const sign of [-1, 1]) {
     kit.box(
-      concrete, sign * d.parapetOffset, d.parapetHeight / 2, 0,
-      d.parapetWidth, d.parapetHeight, MAP_ART.floorSize,
+      concrete, sign * (MAP_ART.floorWidth / 2 - d.parapetInset),
+      d.parapetHeight / 2, 0,
+      d.parapetWidth, d.parapetHeight, MAP_ART.floorDepth,
     );
   }
 
   const tower = kit.material(d.cityColor);
   const windows = d.windowColors.map((color) => kit.material(color, {}, true));
-  for (let i = 0; i < d.towers; i++) {
-    const x = (i - (d.towers - 1) / 2) * d.towerSpacing;
+  repeatXs(d.towerSpacing, 0, 1400).forEach((x, i) => {
     const height = d.towerMinHeight + noise(i) * d.towerHeightRange;
     const z = d.cityZ - noise(i + 50) * d.cityDepth;
     kit.box(
@@ -440,24 +546,25 @@ function buildRooftop(kit, theme) {
         );
       }
     }
-  }
+  });
 
   const equipment = kit.material(d.equipmentColor);
   const vent = kit.material(d.ventColor);
-  for (const x of d.equipmentXs) {
+  repeatXs(d.equipmentSpacing, d.equipmentWidth / 2, 1500).forEach((x, index) => {
+    const height = d.equipmentHeight * variation(index + 1550);
     kit.box(
-      equipment, x, d.equipmentHeight / 2, d.equipmentZ,
-      d.equipmentWidth, d.equipmentHeight, d.equipmentDepth,
+      equipment, x, height / 2, d.equipmentZ,
+      d.equipmentWidth, height, d.equipmentDepth,
     );
     for (let i = 0; i < d.ventCount; i++) {
       kit.box(
-        vent, x, (i + 1) * d.equipmentHeight / (d.ventCount + 1),
+        vent, x, (i + 1) * height / (d.ventCount + 1),
         d.equipmentZ + d.equipmentDepth / 2 + MAP_ART.surfaceLift,
         d.equipmentWidth * d.ventWidthScale, d.ventHeight,
         MAP_ART.surfaceLift,
       );
     }
-  }
+  });
 }
 
 const BUILDERS = {
@@ -482,14 +589,13 @@ function buildTheme(scene, theme) {
     disposed = true;
     root.removeFromParent();
 
-    // Three's light disposal also releases any allocated shadow render target.
+    // Light disposal also releases allocated shadow render targets.
     root.traverse((object) => {
       if (object.isLight) object.dispose?.();
     });
     kit.dispose();
     root.clear();
 
-    // Do not overwrite an environment another owner installed after this map.
     if (scene.background === background) scene.background = previousBackground;
     if (scene.fog === fog) scene.fog = previousFog;
   }
@@ -502,6 +608,7 @@ function buildTheme(scene, theme) {
     addFloor(kit, theme);
     BUILDERS[theme.id](kit, theme);
     addBoundary(kit, theme);
+    kit.finalize();
     scene.add(root);
     scene.background = background;
     scene.fog = fog;

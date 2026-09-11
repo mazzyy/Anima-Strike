@@ -1,7 +1,6 @@
 import { Color } from 'three';
 import { CHARACTER_ROSTER } from './config.js';
 
-/** Each entry has { id, name, tagline, tint, scale, stats, special }. */
 export const CHARACTERS = CHARACTER_ROSTER;
 
 export function characterById(id) {
@@ -9,14 +8,9 @@ export function characterById(id) {
 }
 
 /**
- * Apply an appearance to an already-cloned model and return that model.
- *
- * Materials are owned by this model after the call. A local cache preserves
- * sharing within one fighter, never between fighters or with the asset.
- * Geometry and textures remain shared and untouched. Materials without a
- * colour channel are cloned too, but otherwise left alone.
- *
- * Scale is absolute, not multiplied into the model's previous scale.
+ * Apply appearance to an already-cloned model. The tag also connects existing
+ * match creation to Fighter's move list without depending on display names.
+ * Materials are owned by this model; geometry and textures remain shared.
  */
 export function applyCharacter(model, character) {
   const tint = new Color(character.tint);
@@ -39,6 +33,8 @@ export function applyCharacter(model, character) {
       : cloneMaterial(object.material);
   });
 
+  model.userData ??= {};
+  model.userData.lfCharacter = character.id;
   model.scale.setScalar(character.scale);
   return model;
 }

@@ -216,8 +216,9 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 177 # fail 2",
+      "blocked_by": "tests"
     },
     {
       "id": 17,
@@ -230,8 +231,9 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/renderer/index.html"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 174 # fail 4",
+      "blocked_by": "tests"
     },
     {
       "id": 18,
@@ -241,8 +243,9 @@
         "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 175 # fail 5",
+      "blocked_by": "tests"
     },
     {
       "id": 19,
@@ -254,8 +257,9 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 173 # fail 4",
+      "blocked_by": "tests"
     },
     {
       "id": 20,
@@ -266,8 +270,9 @@
         "little-fighters-js/renderer/src/arenas.js",
         "little-fighters-js/renderer/src/arena.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 171 # fail 10",
+      "blocked_by": "tests"
     },
     {
       "id": 21,
@@ -279,8 +284,9 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/input.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 192 # fail 12",
+      "blocked_by": "tests"
     },
     {
       "id": 22,
@@ -292,8 +298,9 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/renderer/src/fighter.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 193 # fail 11",
+      "blocked_by": "tests"
     },
     {
       "id": 23,
@@ -304,8 +311,9 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/fighter.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 193 # fail 14",
+      "blocked_by": "tests"
     },
     {
       "id": 24,
@@ -318,8 +326,9 @@
         "little-fighters-js/renderer/src/hud.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 189 # fail 18",
+      "blocked_by": "tests"
     },
     {
       "id": 25,
@@ -331,8 +340,9 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/fighter.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "tests failed: # pass 189 # fail 27",
+      "blocked_by": "tests"
     }
   ]
 }

@@ -1,11 +1,8 @@
 /**
- * Procedural renderer audio. The only public entry point is play(name):
- * 'hit', 'block', 'whiff', or 'land'.
- *
- * Audio is unlocked by a pointer/key gesture, never by a simulation event.
- * Unsupported audio, suspended contexts, and unknown names are silent no-ops.
+ * Procedural renderer audio; no assets or simulation-clock scheduling.
+ * play(name, { phase, speed }) accepts any AUDIO.sounds ID.
+ * Unsupported audio, suspended contexts, and unknown IDs are silent no-ops.
  */
-
 import { AUDIO } from './config.js';
 
 let context = null;
@@ -46,8 +43,7 @@ function unlock() {
     }
 
     if (context.state !== 'running' && context.state !== 'closed') {
-      // Retry directly on each gesture. An earlier resume promise (or its
-      // delayed handlers) must not prevent unlocking a suspended context.
+      // Retry on every gesture, even while an earlier resume is pending.
       Promise.resolve(context.resume()).catch(() => {});
     }
   } catch {
@@ -69,7 +65,7 @@ function toggleMute() {
       now + AUDIO.fadeSeconds,
     );
   } catch {
-    // The context may have been closed by the platform.
+    // The platform may have closed the context.
   }
 }
 
@@ -78,12 +74,10 @@ function editableTarget(target) {
     || Boolean(target?.closest?.('input, textarea, select'));
 }
 
-// Guard browser globals so importing this module in headless tests is safe.
 if (typeof globalThis.window?.addEventListener === 'function') {
   globalThis.window.addEventListener('pointerdown', unlock, { passive: true });
   globalThis.window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
-
     if (
       event.code === AUDIO.muteKey
       && !event.ctrlKey && !event.metaKey && !event.altKey
@@ -92,27 +86,29 @@ if (typeof globalThis.window?.addEventListener === 'function') {
       event.preventDefault();
       toggleMute();
     }
-
     unlock();
   });
 }
 
 /**
- * Schedule an immediate sound on the audio clock, independently of hit-stop.
- * Returns true if scheduled. Muted/locked sounds are dropped, never queued.
+ * One voice is one trigger, including all its layers.
+ * All sources start immediately on the audio clock. Nothing is queued.
+ * Jitter is shared by both layers: ±AUDIO.pitchVariationCents.
+ * Only speed-sensitive voices receive the separate, bounded speed multiplier.
  */
-export function play(name) {
+export function play(name, { phase = 'impact', speed = 1 } = {}) {
   if (!Object.hasOwn(AUDIO.sounds, name)) return false;
   if (
     muted || !context || context.state !== 'running'
     || voices.size >= AUDIO.maxVoices
-  ) {
-    return false;
-  }
+  ) return false;
 
-  const sound = AUDIO.sounds[name];
+  const definition = AUDIO.sounds[name];
+  const sound = phase === 'swing' && definition.swing
+    ? definition.swing : definition;
   const sources = [];
   const nodes = [];
+  const scheduled = [];
   let pending = 0;
   let disposed = false;
 
@@ -130,44 +126,63 @@ export function play(name) {
       voices.delete(voice);
     },
   };
-
   voices.add(voice);
 
   try {
     const now = context.currentTime;
+    const cents = (Math.random() * 2 - 1) * AUDIO.pitchVariationCents;
+    const jitter = 2 ** (cents / 1200);
+    const swingSpeed = Number.isFinite(speed)
+      ? Math.max(AUDIO.swingSpeed.min, Math.min(AUDIO.swingSpeed.max, speed))
+      : 1;
+    const rate = sound.speedSensitive ? swingSpeed : 1;
+    const pitch = jitter * rate;
 
     function envelope(layer) {
       const gain = context.createGain();
       nodes.push(gain);
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(layer.volume, now + layer.attack);
+      gain.gain.linearRampToValueAtTime(layer.volume, now + layer.attack / rate);
+      // Irregular, authored amplitude gates give electricity an actual crackle.
+      for (const pulse of layer.pulses ?? []) {
+        gain.gain.setValueAtTime(
+          layer.volume * pulse.level,
+          now + pulse.at / rate,
+        );
+      }
       gain.gain.exponentialRampToValueAtTime(
         AUDIO.envelopeFloor,
-        now + layer.duration,
+        now + layer.duration / rate,
       );
       gain.gain.linearRampToValueAtTime(
         0,
-        now + layer.duration + AUDIO.fadeSeconds,
+        now + layer.duration / rate + AUDIO.fadeSeconds,
       );
       gain.connect(master);
       return gain;
     }
 
-    function schedule(source, duration) {
-      pending++;
-      source.onended = () => {
-        pending--;
-        if (pending === 0) voice.dispose();
-      };
-      source.start(now);
-      source.stop(now + duration + AUDIO.fadeSeconds);
+    function frequency(parameter, layer) {
+      parameter.setValueAtTime(layer.fromHz * pitch, now);
+      for (const note of layer.notes ?? []) {
+        parameter.setValueAtTime(note.hz * pitch, now + note.at / rate);
+      }
+      parameter.exponentialRampToValueAtTime(
+        layer.toHz * pitch,
+        now + layer.duration / rate,
+      );
+    }
+
+    function register(source, duration) {
+      sources.push(source);
+      nodes.push(source);
+      scheduled.push({ source, duration: duration / rate });
     }
 
     if (sound.noise) {
       const layer = sound.noise;
       const source = context.createBufferSource();
-      sources.push(source);
-      nodes.push(source);
+      register(source, layer.duration);
       source.buffer = noiseBuffer;
       source.loop = true;
 
@@ -175,35 +190,35 @@ export function play(name) {
       nodes.push(filter);
       filter.type = layer.filter;
       filter.Q.value = layer.q;
-      filter.frequency.setValueAtTime(layer.fromHz, now);
-      filter.frequency.exponentialRampToValueAtTime(
-        layer.toHz,
-        now + layer.duration,
-      );
-
+      frequency(filter.frequency, layer);
       source.connect(filter);
       filter.connect(envelope(layer));
-      schedule(source, layer.duration);
     }
 
     if (sound.tone) {
       const layer = sound.tone;
       const source = context.createOscillator();
-      sources.push(source);
-      nodes.push(source);
-      source.type = 'sine';
-      source.frequency.setValueAtTime(layer.fromHz, now);
-      source.frequency.exponentialRampToValueAtTime(
-        layer.toHz,
-        now + layer.duration,
-      );
+      register(source, layer.duration);
+      source.type = layer.type ?? 'sine';
+      frequency(source.frequency, layer);
       source.connect(envelope(layer));
-      schedule(source, layer.duration);
     }
 
-    if (pending === 0) {
+    if (!scheduled.length) {
       voice.dispose();
       return false;
+    }
+
+    // Count every layer before starting any of them. The voice remains reserved
+    // until the longest layer ends, not just until the noise burst ends.
+    pending = scheduled.length;
+    for (const { source, duration } of scheduled) {
+      source.onended = () => {
+        pending--;
+        if (pending === 0) voice.dispose();
+      };
+      source.start(now);
+      source.stop(now + duration + AUDIO.fadeSeconds);
     }
     return true;
   } catch {
