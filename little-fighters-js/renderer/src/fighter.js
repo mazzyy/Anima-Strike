@@ -1365,10 +1365,15 @@ export class Fighter {
       this.attackSound = this.currentSuper.sound;
     }
     const clip = this.currentSuper?.clip ?? authoredMove?.clip ?? STATE_CLIP[next];
+    // Only the drop kick starts its clip part-way in — its hit window is
+    // measured from after the wind-up. Sending startAt: 0 for every other
+    // state changes the options object every animator caller compares against,
+    // for no behavioural gain.
+    const startAt = next === State.DROPKICK ? COMBAT.dropkickStartOffset : 0;
     this.animator.play(clip, {
       loop: LOOPING_STATES.has(next),
       speed,
-      startAt: next === State.DROPKICK ? COMBAT.dropkickStartOffset : 0,
+      ...(startAt > 0 ? { startAt } : {}),
     });
     this.onStateChanged?.(next);
   }

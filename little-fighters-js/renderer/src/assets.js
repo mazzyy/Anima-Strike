@@ -87,7 +87,9 @@ export function createAnimator(root, clips) {
     has: (name) => actions.has(name),
     length: (name) => clips.get(name)?.duration ?? 0,
 
-    play(name, { loop = false, fade = 0.12, speed = 1, restart = true } = {}) {
+    play(name, {
+      loop = false, fade = 0.12, speed = 1, restart = true, startAt = 0,
+    } = {}) {
       const action = actions.get(name);
       if (!action) return false;                 // clip missing — stay silent
       if (action === current && !restart) return true;
@@ -96,6 +98,15 @@ export function createAnimator(root, clips) {
       action.clampWhenFinished = !loop;
       action.timeScale = speed;
       action.reset();
+
+      // The drop kick skips its wind-up, because its hit window is timed from
+      // after it. This was being passed in and silently dropped, so the clip
+      // played from the start while the swing length assumed it had not — the
+      // animation and the hitbox disagreed for the whole move.
+      if (startAt > 0) {
+        const clip = clips.get(name);
+        action.time = Math.min(startAt, Math.max(0, (clip?.duration ?? 0) - 1e-3));
+      }
 
       if (current && current !== action) {
         current.crossFadeTo(action, fade, false);

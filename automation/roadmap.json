@@ -6,18 +6,17 @@
     "",
     "Ordered so earlier items don't depend on later ones. `files` narrows the",
     "",
-    "Items 20-25 (2026-09-11) are the depth pass: LF2-scale stages, a real move",
-    "list per character, effects, sound, supers, and a CPU that uses all of it.",
-    "Ground rules, unchanged and non-negotiable:",
-    "  * Logic in a pure module testable under `node --test`; DOM and three.js",
-    "    only render it. A DOM-only module cannot be gated and passes vacuously.",
-    "  * A new module is not finished until main.js (or something it imports)",
-    "    imports it \u2014 tools/wiring.test.mjs fails on orphans.",
-    "  * Reaction timings are AUTHORED in COMBAT.reaction, never read from a clip",
-    "    length. tools/fighter-stun.test.mjs exists because that caused an",
-    "    infinite stun-lock that shipped.",
-    "  * Nothing that walks on the floor may share a plane with the floor.",
-    "    tools/arena-depth.test.mjs exists because that caused visible z-fighting."
+    "2026-09-12. The gate is now DIFFERENTIAL: cmd_build.py measures which tests",
+    "fail before an item runs and reverts only if that item broke something that",
+    "was passing. The old all-or-nothing gate failed every item once anything was",
+    "red, which is how ten items came back blocked having cost real money.",
+    "Item 34 clears the red baseline. Items 26-33 are the environment pass.",
+    "Ground rules:",
+    "  * Logic in a pure module testable under `node --test`; three.js only renders.",
+    "  * A new module is not finished until something main.js reaches imports it.",
+    "  * Props placed with spreadX()/sceneryZ(), never absolute coordinates.",
+    "  * Nothing solid inside ARENA.limitX/limitZ; nothing coplanar with the floor.",
+    "  * Never weaken a test to make it pass."
   ],
   "items": [
     {
@@ -208,34 +207,6 @@
       "note": "Normalize signed zero in both throw launch velocity components. A backward depth-axis throw currently multiplies zero by a negative direction, producing `-0`; adding positive zero after scaling preser"
     },
     {
-      "id": 16,
-      "title": "Add air attacks and juggles",
-      "detail": "Attacks while airborne: a jumping light, a jumping heavy and a diving kick that commits the fighter downward. A fighter hit while airborne enters a juggle state, staying in hitstun and floating briefly so a follow-up can connect, with a per-combo juggle limit so it cannot loop forever and diminishing damage as the juggle count rises. Landing cancels the air state. Tests: an air attack only starts off the floor, juggle count increments per airborne hit, damage scales down as it rises, the limit ends the juggle, and landing resets it.",
-      "files": [
-        "little-fighters-js/renderer/src/fighter.js",
-        "little-fighters-js/renderer/src/config.js",
-        "little-fighters-js/renderer/src/main.js"
-      ],
-      "status": "blocked",
-      "note": "tests failed: # pass 177 # fail 2",
-      "blocked_by": "tests"
-    },
-    {
-      "id": 17,
-      "title": "Widen the key bindings and generate the on-screen controls",
-      "detail": "INPUT_MAPS needs entries for the new actions \u2014 special, grab, taunt \u2014 for both players, chosen so they are comfortable on one keyboard and never collide with each other or with the mute key. Then stop hand-writing the control hints: the text in index.html is already stale, still promising 'J punch' when J is a light jab and I is a heavy. Generate the on-screen hints from INPUT_MAPS at runtime, with a readable label per physical key code, so the two can never drift apart again. Add a test asserting no key code is bound twice within a player's map, that the two players' maps do not overlap, that neither claims the mute key, and that every action in the map has a label.",
-      "files": [
-        "little-fighters-js/renderer/src/config.js",
-        "little-fighters-js/renderer/src/input.js",
-        "little-fighters-js/renderer/src/hud.js",
-        "little-fighters-js/renderer/src/main.js",
-        "little-fighters-js/renderer/index.html"
-      ],
-      "status": "blocked",
-      "note": "tests failed: # pass 174 # fail 4",
-      "blocked_by": "tests"
-    },
-    {
       "id": 18,
       "title": "Bring the camera down to the fight",
       "detail": "The camera sits at y 10, z 9.5, pitched -38 degrees with a 40 degree field of view, which leaves the fighters small in the middle of a mostly empty frame and the top third of the screen showing nothing. Lower it and bring it in so the fighters fill the frame the way they do in a beat-'em-up, keeping the existing follow, separation pull-back and KO push-in behaviour intact. Let each map override the camera so the rooftop can sit lower than the temple. Add a test that the resolved camera for every map keeps both fighters inside the view frustum at maximum separation and at the arena's corners.",
@@ -243,22 +214,8 @@
         "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 175 # fail 5",
-      "blocked_by": "tests"
-    },
-    {
-      "id": 19,
-      "title": "Load a separate model per character, falling back to the knight",
-      "detail": "Right now every character is the same knight with a different tint. Let a character optionally name its own .glb under renderer/assets/characters/, load it once and cache it, and clone per fighter exactly as the knight is cloned. A character with no model, or whose model fails to load, must silently fall back to the tinted knight \u2014 a missing file is never fatal, the same rule the clip loader already follows. Animation clips stay shared, so a model whose skeleton does not match the mixamorig bone names should be rejected at load time and fall back rather than animate wrongly. Tests: fallback on a missing model, fallback on a skeleton mismatch, and that the cache loads a shared model only once.",
-      "files": [
-        "little-fighters-js/renderer/src/assets.js",
-        "little-fighters-js/renderer/src/characters.js",
-        "little-fighters-js/renderer/src/config.js",
-        "little-fighters-js/renderer/src/main.js"
-      ],
-      "status": "blocked",
-      "note": "tests failed: # pass 173 # fail 4",
+      "status": "done",
+      "note": "Superseded by item 20, which moved the camera for the wider stage anyway.",
       "blocked_by": "tests"
     },
     {
@@ -270,9 +227,121 @@
         "little-fighters-js/renderer/src/arenas.js",
         "little-fighters-js/renderer/src/arena.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 171 # fail 10",
+      "status": "done",
+      "note": "Landed: MAP_ART.floorWidth 48 / floorDepth 14, ARENA limits derived from them, instanced decking and repeated props. Art detailing for the new proportions is item 33.",
       "blocked_by": "tests"
+    },
+    {
+      "id": 34,
+      "title": "Get the suite back to green",
+      "detail": "19 tests are failing and they are blocking everything: the gate used to ask whether the whole suite was green, so with anything red every later item failed, was reverted, and was marked blocked regardless of its own merit. The gate is now differential \u2014 an item is judged only on tests it breaks \u2014 but the red baseline still needs clearing, and some of it is real breakage.\n\nTwo different kinds of failure are mixed together here, and they need opposite treatment.\n\nREAL REGRESSIONS \u2014 fix the code, never the test:\n  * 'air punches still knock down; kicks do not cancel a jump' \u2014 a kick pressed while airborne now drops the fighter to IDLE instead of leaving the jump running. The air attack work broke jump preservation.\n  * 'Pike reaches beyond a normal fighter' \u2014 a light press now produces State.ATTACK where it used to produce State.LIGHT_ATTACK, so authored moves are falling back to the legacy attack state.\n  * every failure in tools/ai-moves.test.mjs (7 of its 9 tests), tools/fighter-moves.test.mjs, tools/fighter-air.test.mjs and tools/stage-scale.test.mjs \u2014 these are YOUR OWN tests failing against YOUR OWN code, written in the same item. Fix the implementation.\n\nDELIBERATE SUPERSESSIONS \u2014 update the assertion, and say in a comment why:\n  * tools/audio.test.mjs expects the sound 'hit' where a light jab now correctly emits 'jab', and does not expect the 'ko' stinger before 'block'. Per-move sounds were the point of that item; keep what the test actually guards (each accepted hit sounds exactly once, no whiff follows a connect) and update the vocabulary.\n  * tools/fighter-variants.test.mjs expects LIGHT_ATTACK/HEAVY_ATTACK where an airborne fighter now correctly enters AIR_LIGHT_ATTACK/AIR_HEAVY_ATTACK. Keep the knockdown assertions, update the state names.\n\nNever weaken a test to make it pass. If an assertion no longer describes intended behaviour, replace it with one that describes the new behaviour and leave a comment recording what changed and why \u2014 there are worked examples of exactly this in tools/fighter-buffer-combo.test.mjs and tools/fighter-stun.test.mjs.\n\nFinish with `npm test` fully green.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/moves.js",
+        "little-fighters-js/renderer/src/ai.js",
+        "little-fighters-js/renderer/src/audio.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 26,
+      "title": "Build a real render pipeline",
+      "detail": "The game renders straight to the canvas with no post-processing, which caps how good it can ever look. Every addon needed is already vendored under renderer/vendor/three/examples/jsm/postprocessing \u2014 nothing to install.\n\nAdd renderer/src/post.js wrapping EffectComposer: RenderPass, then UnrealBloomPass so emissive lanterns, neon and energy actually bleed light, then an ambient-occlusion pass (GTAOPass, or SAOPass if it proves cheaper) so contact between props and ground reads, then SMAAPass or FXAAPass, then a grade \u2014 VignetteShader plus HueSaturationShader or a LUTPass \u2014 and OutputPass last. Expose setSize() and dispose(), and route arena.render() through the composer.\n\nEach map declares its own grade: bloom strength, radius and threshold, exposure, vignette, saturation and tint. The dojo should feel warm and soft; the neon street should bloom hard off saturated signage; the temple should be dusty and low-contrast; the rooftop should be cold with a bright horizon.\n\nQuality tiers matter more than maximum quality: define 'high', 'medium' and 'low', with low skipping AO and bloom entirely, and pick one by measuring actual frame time over the first couple of seconds rather than by sniffing the GPU string. A player on weak hardware must get a playable game, not a slideshow.\n\nTests: the pipeline builds and disposes without leaking render targets; every map declares a complete, in-range grade; each tier's pass list is a subset of the one above it; setSize updates every pass; and the tier chosen from a slow measured frame time is lower than the one chosen from a fast one.",
+      "files": [
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 27,
+      "title": "Give every stage a sky and a time of day",
+      "detail": "Maps currently have a flat background colour. three/addons/objects/Sky.js implements Rayleigh-Mie atmospheric scattering and is already vendored, along with Lensflare.js.\n\nAdd renderer/src/sky.js. Each map declares sun elevation and azimuth, turbidity, rayleigh, mie coefficient and mie directional g, and the sky renders that \u2014 a real gradient with a sun, horizon glow and colour that changes with elevation. The dojo sits at warm late afternoon, the temple at dusk with the sun near the horizon, the rooftop at blue hour, the neon street at night where the Sky shader gives way to a dark gradient dome with a star field.\n\nThen make the sky and the lighting agree: derive each map's key light direction and colour FROM its sun position rather than hand-authoring both and letting them drift apart \u2014 a sun low on the left with shadows pointing left is the single most common way a stage reads as fake. Add a drifting cloud layer (a large slowly-scrolling plane with a procedural noise alpha via ImprovedNoise), a horizon haze band matched to the fog colour, and a lens flare only where the sun is actually in shot.\n\nTests: every map has a complete sky spec with values in the shader's valid ranges; the computed sun direction matches the map's key light direction within a small tolerance; night maps produce a star field and day maps do not; and build/dispose leaves no textures or render targets behind.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/arena.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 28,
+      "title": "Put depth behind and in front of the fight",
+      "detail": "Beyond the stage floor there is nothing \u2014 the top of the frame is empty dark, which is the clearest single tell that these are toy stages. Real beat-'em-up stages have layers that move at different speeds as the camera pans.\n\nAdd renderer/src/backdrop.js: at least three depth layers per map, each drifting horizontally at a fraction of the camera's x movement \u2014 far layers barely move, near layers move almost with the camera. Build them from what is vendored: generators/CityGenerator.js and city/SkyscraperGenerator.js for the rooftop's skyline, ForestGenerator.js and TreeGenerator.js for the temple's treeline, silhouetted roofs and distant mountains for the dojo, and a receding canyon of lit windows for the street.\n\nLayers further away should be flatter, dimmer, bluer and less detailed \u2014 aerial perspective does more for depth than geometry does. Add a foreground layer too: out-of-focus pillars, railings or foliage that pass in front of the fighters at the edges of the frame, dark and unlit, never crossing the middle where they would hide the fight.\n\nEverything here is decoration and must sit outside ARENA.limitX/limitZ \u2014 tools/stage-integrity.test.mjs fails on anything solid within reach \u2014 and must stay inside the draw-call and triangle budgets, so instance the repeated elements.\n\nTests: parallax factors are strictly ordered by depth; no backdrop element intersects the playable volume; foreground elements never occlude the centre third of the frame; the layers stay inside budget; and dispose() releases every generated geometry.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 29,
+      "title": "Light the stages like sets, not like demos",
+      "detail": "Each map has three to six lights and one shadow caster, and the result is flat: the floor is evenly bright end to end, the lanterns glow but cast no pool of light, and the fighters read as dark silhouettes.\n\nBuild a proper rig per map: a key light matching the sun from item 27, a cooler fill from the opposite side so the shadowed side of a fighter is not black, and a rim light behind to separate the fighters from the backdrop \u2014 that rim is what makes characters pop, and it is missing entirely.\n\nThen make the practicals real. Lanterns, neon signs, braziers and streetlights should each cast a genuine pool of light with sensible falloff and appear in the bloom pass, and they should live: candle and brazier light flickers on layered noise, neon buzzes and occasionally stutters or half-dies, and the rooftop gets distant lightning that briefly floods the whole scene cold white and is followed by thunder.\n\nLights are expensive in a forward renderer, so stay inside the budget in tools/stage-integrity.test.mjs: use emissive materials plus bloom for things that should merely look bright, and real lights only where something must actually be lit. Tune the shadow camera to the new stage width so shadows are sharp rather than smeared across 48 units.\n\nTests: light and shadow-caster counts stay inside budget; every flicker stays within a stated intensity range and never goes negative or exceeds its base; each practical's emissive colour matches the light it casts; the shadow camera's extent covers the playable area exactly; and every map has a key, a fill and a rim.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/arena.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 30,
+      "title": "Add weather and atmosphere",
+      "detail": "Nothing in these stages moves. Add renderer/src/weather.js, with each map declaring what fills its air:\n  dojo \u2014 cherry petals drifting on a wind field, dust motes turning slowly in the shafts of light from the paper screens\n  neon street \u2014 rain, falling at an angle, with splash rings where each drop lands and a wet sheen on the road; steam curling from a grate; the odd distant car light\n  temple \u2014 embers rising from braziers and fading out, pollen or ash drifting, low ground mist pooling around the pillars, fireflies after dusk\n  rooftop \u2014 wind-driven grit, fast low cloud, a slow aircraft light crossing the distance, gusts that bend the antennae\n\nPlus, where the light direction supports it, god rays: additive cones from the sun or a practical, gently animated, which are cheap and enormously effective.\n\nBuild each system as ONE Points or InstancedMesh with a fixed particle budget, recycled rather than reallocated \u2014 never allocate inside the update loop. Drive them from a shared, seeded wind field so everything in a scene moves together, and make that field deterministic given a seed so it can be tested. One update(dt) drives all of it; one clear() empties it between rounds.\n\nTests: every system respects its particle cap; particles wrap or respawn rather than escaping or accumulating; the wind field is identical for the same seed and different for another; update(0) changes nothing; clear() empties and disposes; and a map that declares no weather allocates nothing at all.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 31,
+      "title": "Surface the ground properly",
+      "detail": "The floor is flat colour on flat boxes. Everything needed to fix that is vendored: objects/Reflector.js for planar reflection, objects/Water.js, geometries/DecalGeometry.js, math/ImprovedNoise.js and SimplexNoise.js for procedural variation, and math/MeshSurfaceSampler.js for scattering.\n\nGenerate texture maps procedurally into canvases \u2014 no image files \u2014 so surfaces have grain rather than a single albedo: plank wood with visible grain and knots, asphalt with aggregate and tyre polish, temple stone with weathering and moss in the joints, roof concrete with staining and patches. Generate matching normal and roughness maps from the same noise so light actually catches the surface; a roughness map alone transforms how wet asphalt reads under neon.\n\nAdd a Reflector for the wet street so the signage reflects in the road \u2014 resolution scaled by the quality tier from item 26, and off entirely on low. Scatter surface detail with MeshSurfaceSampler: leaves and grit near the edges, cracks, drain covers, worn patches along the walking line. Use DecalGeometry for persistent marks \u2014 scorches, cracks, scuffs \u2014 with a recycled pool and a hard cap so a long match cannot accumulate hundreds.\n\nEverything here is flat detail and must not violate the existing depth rules: tools/arena-depth.test.mjs fails on two surfaces sharing a plane.\n\nTests: generated textures have non-uniform pixel data, so a flat fill fails; every material with a normal map also has the matching roughness map; the decal pool caps and recycles oldest-first; reflector resolution drops with the quality tier and is absent on low; and dispose() releases every generated canvas texture.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/arena.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 32,
+      "title": "Make the stage react to the fight",
+      "detail": "The environment is currently scenery the fight happens in front of. It should respond to what happens, which is most of what makes a fight feel heavy.\n\nDrive all of this from events the game already emits \u2014 a hit resolving, a landing, a knockdown, a round starting, a KO \u2014 never by polling fighter state from the arena:\n  * dust bursts under a fighter's feet on landing, dashing and being knocked down\n  * lanterns swing, banners ripple and foliage shakes on a heavy hit, damped back to rest\n  * a ground pound cracks the floor as a decal and throws a ring of debris\n  * neon stutters and the lights dip on a KO, then recover\n  * birds scatter from the temple roof on the first heavy hit of a round\n  * light pools brighten fractionally on impact, so the whole scene registers the hit\n  * the camera shake from the effects system couples to all of it rather than fighting it\n  * round start swells the key light; the KO drops the scene into cold slow-motion light\n\nEvery reaction must decay back to rest and leave no residue \u2014 after a hundred hits the stage must be in the same state it started in, apart from capped persistent decals. Nothing may accumulate across rounds.\n\nTests: each reaction is triggered by an event rather than a per-frame state read; each decays to its rest value within a stated time and stops exactly there; a hundred triggers leave object and light counts unchanged; reactions are ignored while the match is paused; and clear() between rounds returns every swinging or dipped value to rest.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/arena.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 33,
+      "title": "Dress each stage to the level of a finished game",
+      "detail": "The stages are now 48 by 20 with the structure and systems in place. This item is the art: fill them until they look like places rather than diagrams. Give each a clear focal point, a silhouette that reads at a glance, and detail that rewards looking.\n\n  Lantern Dojo \u2014 a raised master's dais at one end, weapon racks, training dummies, hanging scrolls and banners, sliding screens with figures silhouetted behind them, a tiled roof overhead with visible beams, floor worn pale along the centre line, a tokonoma alcove, cushions, a bell.\n  Neon Street \u2014 layered shopfronts with distinct signage in different scripts, a noodle stall with steam and a vendor, fire escapes and AC units up the facades, bins, crates, puddles catching sign colour, cables strung overhead, a parked scooter, manhole steam, a lit bus shelter, graffiti.\n  Dusk Temple \u2014 a broken colonnade with fallen pillar drums, a central brazier, carved reliefs, a stone stair rising out of frame, creeping vines and moss, a cracked statue, hanging chains, prayer flags catching the wind.\n  Highline Rooftop \u2014 vents, ducts, water tanks, satellite dishes, a lit stairwell hut, puddles on the membrane, a chain-link fence, pigeons, an aircraft warning light, laundry lines, the city dropping away past the parapet.\n\nRules that keep this shippable: props are stage-relative via spreadX()/sceneryZ(), never absolute coordinates \u2014 that is what put the pillars in the middle of the fight; anything solid stays outside ARENA.limitX/limitZ; repeated props are instanced; and the whole stage stays inside the budget in tools/stage-integrity.test.mjs. Vary every repeated element with the existing noise() so nothing reads as wallpaper.\n\nTests: each map declares a minimum number of distinct prop types; no prop intersects the playable volume; every prop group repeated more than twenty times is instanced; each map stays inside the draw-call, triangle and light budgets; and build/dispose over several cycles leaves the scene exactly as it started.",
+      "files": [
+        "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
     },
     {
       "id": 21,
@@ -284,8 +353,8 @@
         "little-fighters-js/renderer/src/fighter.js",
         "little-fighters-js/renderer/src/input.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 192 # fail 12",
+      "status": "pending",
+      "note": "tests failed: # pass 192 # fail 12  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
       "blocked_by": "tests"
     },
     {
@@ -298,8 +367,8 @@
         "little-fighters-js/renderer/src/main.js",
         "little-fighters-js/renderer/src/fighter.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 193 # fail 11",
+      "status": "pending",
+      "note": "tests failed: # pass 193 # fail 11  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
       "blocked_by": "tests"
     },
     {
@@ -311,8 +380,8 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/fighter.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 193 # fail 14",
+      "status": "pending",
+      "note": "tests failed: # pass 193 # fail 14  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
       "blocked_by": "tests"
     },
     {
@@ -326,8 +395,8 @@
         "little-fighters-js/renderer/src/hud.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 189 # fail 18",
+      "status": "pending",
+      "note": "tests failed: # pass 189 # fail 18  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
       "blocked_by": "tests"
     },
     {
@@ -340,8 +409,50 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/fighter.js"
       ],
-      "status": "blocked",
-      "note": "tests failed: # pass 189 # fail 27",
+      "status": "pending",
+      "note": "tests failed: # pass 189 # fail 27  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
+      "blocked_by": "tests"
+    },
+    {
+      "id": 16,
+      "title": "Add air attacks and juggles",
+      "detail": "Attacks while airborne: a jumping light, a jumping heavy and a diving kick that commits the fighter downward. A fighter hit while airborne enters a juggle state, staying in hitstun and floating briefly so a follow-up can connect, with a per-combo juggle limit so it cannot loop forever and diminishing damage as the juggle count rises. Landing cancels the air state. Tests: an air attack only starts off the floor, juggle count increments per airborne hit, damage scales down as it rises, the limit ends the juggle, and landing resets it.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": "tests failed: # pass 177 # fail 2  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
+      "blocked_by": "tests"
+    },
+    {
+      "id": 17,
+      "title": "Widen the key bindings and generate the on-screen controls",
+      "detail": "INPUT_MAPS needs entries for the new actions \u2014 special, grab, taunt \u2014 for both players, chosen so they are comfortable on one keyboard and never collide with each other or with the mute key. Then stop hand-writing the control hints: the text in index.html is already stale, still promising 'J punch' when J is a light jab and I is a heavy. Generate the on-screen hints from INPUT_MAPS at runtime, with a readable label per physical key code, so the two can never drift apart again. Add a test asserting no key code is bound twice within a player's map, that the two players' maps do not overlap, that neither claims the mute key, and that every action in the map has a label.",
+      "files": [
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/input.js",
+        "little-fighters-js/renderer/src/hud.js",
+        "little-fighters-js/renderer/src/main.js",
+        "little-fighters-js/renderer/index.html"
+      ],
+      "status": "pending",
+      "note": "tests failed: # pass 174 # fail 4  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
+      "blocked_by": "tests"
+    },
+    {
+      "id": 19,
+      "title": "Load a separate model per character, falling back to the knight",
+      "detail": "Right now every character is the same knight with a different tint. Let a character optionally name its own .glb under renderer/assets/characters/, load it once and cache it, and clone per fighter exactly as the knight is cloned. A character with no model, or whose model fails to load, must silently fall back to the tinted knight \u2014 a missing file is never fatal, the same rule the clip loader already follows. Animation clips stay shared, so a model whose skeleton does not match the mixamorig bone names should be rejected at load time and fall back rather than animate wrongly. Tests: fallback on a missing model, fallback on a skeleton mismatch, and that the cache loads a shared model only once.",
+      "files": [
+        "little-fighters-js/renderer/src/assets.js",
+        "little-fighters-js/renderer/src/characters.js",
+        "little-fighters-js/renderer/src/config.js",
+        "little-fighters-js/renderer/src/main.js"
+      ],
+      "status": "pending",
+      "note": "tests failed: # pass 173 # fail 4  [reset 2026-09-12: was blocked by the old all-or-nothing gate, which failed every item once anything was red]",
       "blocked_by": "tests"
     }
   ]

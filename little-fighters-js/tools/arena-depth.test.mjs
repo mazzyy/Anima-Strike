@@ -28,13 +28,34 @@ function groundSurfaces(scene) {
   const found = [];
   scene.updateMatrixWorld(true);
 
-  scene.traverse((object) => {
-    if (!object.isMesh || !object.geometry) return;
-    const box = new THREE.Box3().setFromObject(object);
+  const keep = (box) => {
     if (box.isEmpty() || !Number.isFinite(box.max.y)) return;
     // Walls and props are separated from the floor by metres; ignore them.
     if (Math.abs(box.max.y - ARENA.floorY) > 0.5) return;
     found.push({ topY: box.max.y, box });
+  };
+
+  scene.traverse((object) => {
+    if (!object.isMesh || !object.geometry) return;
+
+    // An InstancedMesh reports ONE box covering every instance. Two interleaved
+    // tile batches would then look like they overlap everywhere, when in fact
+    // each tile has the plane to itself. Expand to per-instance boxes so the
+    // test measures real surfaces rather than their union.
+    if (object.isInstancedMesh) {
+      object.geometry.computeBoundingBox();
+      const local = object.geometry.boundingBox;
+      const instance = new THREE.Matrix4();
+      const world = new THREE.Matrix4();
+      for (let i = 0; i < object.count; i++) {
+        object.getMatrixAt(i, instance);
+        world.multiplyMatrices(object.matrixWorld, instance);
+        keep(local.clone().applyMatrix4(world));
+      }
+      return;
+    }
+
+    keep(new THREE.Box3().setFromObject(object));
   });
   return found;
 }

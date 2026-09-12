@@ -152,6 +152,25 @@ def _test_summary(output: str) -> str:
     return f"{passed.strip()} {failed.strip()}".strip() or "no summary"
 
 
+def failing_tests(output: str) -> set[str]:
+    """The NAMES of the failing tests, from the TAP output.
+
+    The gate used to ask one question — is the whole suite green? — which is
+    unanswerable once anything is red for a reason outside the current item.
+    Every item then failed, got reverted, and the loop spent real money making
+    no progress while reporting ten blocked items. Comparing the failing SET
+    before and after asks the only fair question instead: did THIS change break
+    anything that was working?
+    """
+    names = set()
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("not ok "):
+            _, _, rest = stripped.partition(" - ")
+            names.add(rest.strip() or stripped)
+    return names
+
+
 def _failure_excerpt(output: str, limit: int = 2500) -> str:
     """The part of the test output worth sending back to the model."""
     lines = output.splitlines()
@@ -290,6 +309,17 @@ def _build_one(item, args, client) -> str:
     print(f"\n{'=' * 66}")
     print(f"#{item['id']}  {item['title']}")
     print("=" * 66)
+
+    # Measure BEFORE touching anything. An item is judged on what it broke,
+    # not on the state it inherited — otherwise one red test from an earlier
+    # item blocks every item after it, forever, at full price.
+    baseline_failures: set[str] = set()
+    if not args.no_gate:
+        base_ok, base_output = run_tests()
+        baseline_failures = failing_tests(base_output)
+        if baseline_failures:
+            print(f"  baseline: {len(baseline_failures)} test(s) already failing "
+                  "— this item is judged only on what it changes")
     nfiles = len(item.get("files") or [])
     if nfiles > MAX_CONTEXT_FILES:
         item["files"] = item["files"][:MAX_CONTEXT_FILES]
@@ -331,9 +361,25 @@ def _build_one(item, args, client) -> str:
     for attempt in range(args.repair + 1):
         print("  running tests…", end=" ", flush=True)
         passed, output = run_tests()
-        if passed:
-            print(f"PASS  ({_test_summary(output)})")
+        now_failing = failing_tests(output)
+        introduced = now_failing - baseline_failures
+        fixed = baseline_failures - now_failing
+
+        # Green is ideal. Otherwise the question is whether THIS item broke
+        # anything — a test that was already red is not its fault, and holding
+        # it responsible is what deadlocked the loop.
+        if passed or not introduced:
+            if passed:
+                print(f"PASS  ({_test_summary(output)})")
+            else:
+                print(f"OK    ({_test_summary(output)}) — "
+                      f"broke nothing new"
+                      + (f", fixed {len(fixed)}" if fixed else "")
+                      + f"; {len(now_failing)} still red from before")
             item["note"] = (proposal.plan.strip().splitlines() or [""])[0][:200]
+            if not passed:
+                item["note"] += (f"  [gate: {len(now_failing)} pre-existing failures "
+                                 f"remain, none introduced here]")
             item.pop("blocked_by", None)
             if proposal.wiring and proposal.wiring.strip().lower() not in ("none.", "none"):
                 print("  wiring needed:")
@@ -341,7 +387,8 @@ def _build_one(item, args, client) -> str:
                     print(f"    {line}")
             return "done"
 
-        print(f"FAIL  ({_test_summary(output)})")
+        print(f"FAIL  ({_test_summary(output)}) — broke {len(introduced)}: "
+              + "; ".join(sorted(introduced)[:3])[:160])
         if attempt >= args.repair:
             break
 
@@ -364,9 +411,10 @@ def _build_one(item, args, client) -> str:
         cmd_codegen.apply_proposal(fix.out, fix.files, quiet=True)
         proposal = fix
 
-    print("  reverting — the tests must stay green.")
+    print(f"  reverting — this change broke {len(introduced)} test(s) that passed before.")
     cmd_codegen.revert_proposal(proposal.out, quiet=True)
-    item["note"] = f"tests failed: {_test_summary(output)}"
+    item["note"] = ("broke tests that passed before: "
+                    + "; ".join(sorted(introduced)[:4]))[:300]
     item["blocked_by"] = "tests"
     return "blocked"
 

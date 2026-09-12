@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { Fighter, State, moveToward, lerpAngle } from '../renderer/src/fighter.js';
-import { COMBAT, BODY } from '../renderer/src/config.js';
+import { COMBAT, BODY, ARENA, MOVEMENT } from '../renderer/src/config.js';
 
 /** An animator with known clip lengths, so timing is deterministic. */
 function fakeAnimator(lengths = {}) {
@@ -225,6 +225,11 @@ test('fighters stay inside the arena bounds', () => {
   const f = makeFighter({ x: 0, y: 0, z: 0 });
   f.controller.move = () => ({ x: 1, y: 0 });
   const world = { fighters: [f] };
-  step(world, 4);
-  assert.ok(f.position.x <= 2.75, `walked through the wall to x=${f.position.x}`);
+  // Long enough to actually reach the wall: the stage is now 44 units across,
+  // so four seconds of walking no longer gets anywhere near the edge.
+  step(world, ARENA.limitX / MOVEMENT.walkSpeed + 4);
+  assert.ok(f.position.x <= ARENA.limitX + 1e-6,
+    `walked through the wall to x=${f.position.x}`);
+  assert.ok(f.position.x > ARENA.limitX - 0.5,
+    `never reached the wall — only got to x=${f.position.x}`);
 });
