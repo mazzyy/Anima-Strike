@@ -1,9 +1,12 @@
 /**
- * Persistent renderer, camera and pooled VFX. Maps have separate ownership.
+ * Persistent renderer, camera, post-processing and pooled VFX.
+ * Maps and decorative backdrops have separate ownership.
  */
 import * as THREE from 'three';
-import { ARENA, CAMERA } from './config.js';
+import { ARENA, CAMERA, MAP_THEMES } from './config.js';
 import { buildMap } from './arenas.js';
+import { createBackdrop } from './backdrop.js';
+import { createPost } from './post.js';
 import { VFXSystem } from './vfx.js';
 
 /**
@@ -114,22 +117,26 @@ export function createCameraRig(camera) {
   return { updateCamera, resetCamera, setShake };
 }
 
-export function createArena(canvas, mapId) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+export function createArena(canvas, mapId, { backdropSources = {} } = {}) {
+  // Canvas MSAA does not antialias offscreen composer targets. FXAA does.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
   let map = buildMap(scene, mapId);
+  let backdrop = createBackdrop(scene, map.mapId, { sources: backdropSources });
   let disposed = false;
   const camera = new THREE.PerspectiveCamera(
     ARENA.camera.fov, window.innerWidth / window.innerHeight,
     ARENA.camera.near, ARENA.camera.far,
   );
   const { updateCamera, resetCamera, setShake } = createCameraRig(camera);
+  const post = createPost(renderer, scene, camera, {
+    grade: MAP_THEMES.find((theme) => theme.id === map.mapId).grade,
+  });
   const vfx = new VFXSystem(scene, { onShake: setShake });
 
   // Compatibility for existing arena consumers. Main uses the richer event API.
@@ -142,9 +149,13 @@ export function createArena(canvas, mapId) {
   function setMap(nextMapId) {
     if (disposed) return;
     vfx.clear();
+    backdrop.dispose();
     map.dispose();
     map = buildMap(scene, nextMapId);
+    backdrop = createBackdrop(scene, map.mapId, { sources: backdropSources });
+    post.setGrade(MAP_THEMES.find((theme) => theme.id === map.mapId).grade);
     resetCamera();
+    backdrop.update(camera);
     return map.mapId;
   }
 
@@ -154,7 +165,8 @@ export function createArena(canvas, mapId) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     updateCamera(0);
-    renderer.setSize(w, h, false);
+    backdrop.update(camera);
+    post.setSize(w, h, window.devicePixelRatio);
   }
   resize();
   window.addEventListener('resize', resize);
@@ -164,17 +176,23 @@ export function createArena(canvas, mapId) {
     disposed = true;
     window.removeEventListener('resize', resize);
     vfx.dispose();
+    post.dispose();
+    backdrop.dispose();
     map.dispose();
     renderer.dispose();
   }
 
   return {
-    renderer, scene, camera, vfx,
+    renderer, scene, camera, vfx, post,
     get mapId() { return map.mapId; },
     setMap, dispose, spawnHitEffect, updateSparks, clearSparks,
     updateCamera, resetCamera,
     render: () => {
-      if (!disposed) renderer.render(scene, camera);
+      if (disposed) return;
+      // Projection guards use the final shaken camera, including resize,
+      // tracking pull-back and KO push-in, rather than last frame's framing.
+      backdrop.update(camera);
+      post.render(performance.now(), !document.hidden);
     },
   };
 }

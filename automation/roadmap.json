@@ -242,8 +242,9 @@
         "little-fighters-js/renderer/src/audio.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Too big for one call: 19 failures across five files including a 52 KB fighter.js and a 36 KB config.js. Complete rewrites of those alone need ~25k output tokens; the model returned 837 and no file blocks, for $0.40. Split into items 35-38.",
+      "blocked_by": "api"
     },
     {
       "id": 26,
@@ -255,8 +256,8 @@
         "little-fighters-js/renderer/src/arenas.js",
         "little-fighters-js/renderer/src/main.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add an HDR composer with bloom, GTAO, FXAA, per-map grading, and final output conversion. Quality starts at medium, measures real presentation intervals during the first two seconds, and continues mon  [gate: 19 pre-existing failures remain, none introduced here]"
     },
     {
       "id": 27,
@@ -267,8 +268,9 @@
         "little-fighters-js/renderer/src/config.js",
         "little-fighters-js/renderer/src/arena.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "blocked",
+      "note": "broke tests that passed before: every module under renderer/src links on its own; the whole module graph links from main.js; tools/ai-moves.test.mjs; tools/arena-depth.test.mjs",
+      "blocked_by": "tests"
     },
     {
       "id": 28,
@@ -279,8 +281,8 @@
         "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
-      "status": "pending",
-      "note": ""
+      "status": "done",
+      "note": "Add three instanced background layers per map, with ordered camera-relative drift, aerial perspective, and soft, screen-edge-only foreground silhouettes. Arena ownership handles updates, resizing, map  [gate: 19 pre-existing failures remain, none introduced here]"
     },
     {
       "id": 29,
@@ -338,6 +340,51 @@
       "detail": "The stages are now 48 by 20 with the structure and systems in place. This item is the art: fill them until they look like places rather than diagrams. Give each a clear focal point, a silhouette that reads at a glance, and detail that rewards looking.\n\n  Lantern Dojo \u2014 a raised master's dais at one end, weapon racks, training dummies, hanging scrolls and banners, sliding screens with figures silhouetted behind them, a tiled roof overhead with visible beams, floor worn pale along the centre line, a tokonoma alcove, cushions, a bell.\n  Neon Street \u2014 layered shopfronts with distinct signage in different scripts, a noodle stall with steam and a vendor, fire escapes and AC units up the facades, bins, crates, puddles catching sign colour, cables strung overhead, a parked scooter, manhole steam, a lit bus shelter, graffiti.\n  Dusk Temple \u2014 a broken colonnade with fallen pillar drums, a central brazier, carved reliefs, a stone stair rising out of frame, creeping vines and moss, a cracked statue, hanging chains, prayer flags catching the wind.\n  Highline Rooftop \u2014 vents, ducts, water tanks, satellite dishes, a lit stairwell hut, puddles on the membrane, a chain-link fence, pigeons, an aircraft warning light, laundry lines, the city dropping away past the parapet.\n\nRules that keep this shippable: props are stage-relative via spreadX()/sceneryZ(), never absolute coordinates \u2014 that is what put the pillars in the middle of the fight; anything solid stays outside ARENA.limitX/limitZ; repeated props are instanced; and the whole stage stays inside the budget in tools/stage-integrity.test.mjs. Vary every repeated element with the existing noise() so nothing reads as wallpaper.\n\nTests: each map declares a minimum number of distinct prop types; no prop intersects the playable volume; every prop group repeated more than twenty times is instanced; each map stays inside the draw-call, triangle and light budgets; and build/dispose over several cycles leaves the scene exactly as it started.",
       "files": [
         "little-fighters-js/renderer/src/arenas.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 35,
+      "title": "Update the four test assertions that later work deliberately superseded",
+      "detail": "Four failing tests assert behaviour that later items intentionally replaced. Only the TEST files change here \u2014 the code is correct.\n\ntools/audio.test.mjs\n  'accepted hits and blocks sound once, with no following whiff' expects the sound 'hit'. A light jab now emits 'jab', because per-move sounds were the whole point of that work. 'blocks with zero chip and lethal chip still sound; rear hits are hits' does not expect the 'ko' stinger that now precedes 'block' on a lethal chip. Keep exactly what these tests guard \u2014 each accepted hit sounds once, no whiff follows a connect, a block still sounds \u2014 and update the expected vocabulary.\n\ntools/fighter-variants.test.mjs\n  'light: airborne punches retain knockdown behavior' expects LIGHT_ATTACK and 'heavy: ...' expects HEAVY_ATTACK. An airborne fighter now correctly enters AIR_LIGHT_ATTACK and AIR_HEAVY_ATTACK. Keep the knockdown assertions, which are the point of those tests; change only the state names.\n\nLeave a short comment on each changed assertion saying what superseded it. Do not touch any file under renderer/src \u2014 if a change there seems necessary, the diagnosis is wrong.",
+      "files": [
+        "little-fighters-js/tools/audio.test.mjs",
+        "little-fighters-js/tools/fighter-variants.test.mjs"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 36,
+      "title": "Fix the airborne kick that cancels a jump",
+      "detail": "tools/fighter-buffer-combo.test.mjs, 'air punches still knock down; kicks do not cancel a jump', fails with 'IDLE' !== 'JUMP'. The sequence is: press jump, confirm JUMP; press kick while airborne; the fighter must still be airborne. It now lands in IDLE, so an air kick is cancelling the jump outright.\n\nAlso failing and likely related: tools/fighter-air.test.mjs 'kick: air variant requires actual takeoff, including fresh floor spawns'.\n\nFix renderer/src/fighter.js. This is a genuine regression from the air-attack work \u2014 do NOT change either test. An air kick should enter the dive-kick state and keep the fighter airborne until it lands.",
+      "files": [
+        "little-fighters-js/renderer/src/fighter.js",
+        "little-fighters-js/renderer/src/config.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 37,
+      "title": "Make the CPU's move selection pass its own tests",
+      "detail": "tools/ai-moves.test.mjs fails 7 of its 9 tests, and tools/fighter-moves.test.mjs fails 2. These are tests written alongside the code they test, so the implementation is what is wrong:\n  'all six CPUs emit only owned moves, accepted by player resolution and Fighter'\n  'longer range favors longer reach rather than short jabs'\n  'projectile commands execute on both sides, not as fallback light attacks'\n  'an airborne target causes a high/air move rather than a low sweep'\n  'knockdown, getup and KO cancel pending input before the button edge'\n  'Easy produces measurably shorter confirmed strings than Hard'\n  'a missing or rejected bridge leaves local play available'\n  'direction edges work through the unchanged controller, including double back'\n  'ground pound hits both sides once, not merely the forward hitbox'\n\nRead each failure and fix renderer/src/ai.js and renderer/src/moves.js. Do not weaken the tests. Note that authored moves now enter the state their button implies \u2014 LIGHT_ATTACK, HEAVY_ATTACK, KICK \u2014 rather than the legacy State.ATTACK, which may be what some of the selection logic still assumes.",
+      "files": [
+        "little-fighters-js/renderer/src/ai.js",
+        "little-fighters-js/renderer/src/moves.js",
+        "little-fighters-js/renderer/src/fighter.js"
+      ],
+      "status": "pending",
+      "note": ""
+    },
+    {
+      "id": 38,
+      "title": "Frame both ends of the wide stage",
+      "detail": "tools/stage-scale.test.mjs, 'camera frames both ends, edge tracking and resize at aspect 0.5625', fails with 'first frame: -23.345,0,-6.345' \u2014 a fighter at the far end of the stage falls outside the view frustum. The stage is now 48 units wide and the camera's tracking and pull-back were tuned for a 4.5-unit square.\n\nFix the camera in renderer/src/arena.js and CAMERA in renderer/src/config.js so both fighters stay framed with one at each end, at the narrow 0.5625 aspect as well as a wide one. Keep the existing follow, separation pull-back and KO push-in behaviour. Do not change the test.",
+      "files": [
+        "little-fighters-js/renderer/src/arena.js",
         "little-fighters-js/renderer/src/config.js"
       ],
       "status": "pending",

@@ -360,11 +360,34 @@ export class Fighter {
     return true;
   }
 
+  /**
+   * The state an authored move enters.
+   *
+   * Every authored move used to enter State.ATTACK — the LEGACY action state —
+   * whatever button produced it. That collapsed light, heavy and kick into one
+   * state, so nothing downstream could tell them apart: main.js reads
+   * State.HEAVY_ATTACK to decide whether a hit earns hit-stop, so heavies
+   * stopped registering as heavy; air variants were indistinguishable from
+   * grounded ones; and a light jab reported itself as a legacy attack.
+   *
+   * The button is the last token of the command — 'forward,down,light' is a
+   * light. Commands ending in 'grab' or 'dash' (a command throw, a teleport)
+   * are not punches and deliberately keep the legacy State.ATTACK, which is
+   * what they already had. tools/move-states.test.mjs catches any NEW button
+   * that falls through unmapped.
+   */
+  #stateForMove(move) {
+    const button = String(move.input ?? '').split(',').pop().trim();
+    if (this.#isAirborne() && AIR_STATE_FOR[button]) return AIR_STATE_FOR[button];
+    if (button === 'kick') return State.KICK;
+    return PUNCH_STATE_FOR[button] ?? State.ATTACK;
+  }
+
   #startMove(move) {
     this.inputHistory = [];
     this.bufferedAttack = null;
     this.attackBufferLeft = 0;
-    this.#enterState(State.ATTACK, move);
+    this.#enterState(this.#stateForMove(move), move);
     if (move.effects.selfDamage) this.health.applyDamage(move.effects.selfDamage);
   }
 

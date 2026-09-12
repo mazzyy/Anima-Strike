@@ -68,15 +68,16 @@ export const COMBAT = {
 /**
  * Command timestamps and all move durations are simulation seconds.
  * A neutral sample separates taps but is not part of a command.
- * Diagonals select the vertical direction; inputs never skip wrong directions.
+ * Diagonals never skip wrong directions.
  */
 export const MOVE_RULES = {
   commandSeconds: 0.65,
   stepSeconds: 0.24,
-  buttonBufferSeconds: COMBAT.attackBufferSeconds,
+  attackBufferSeconds: undefined,
   historyLimit: 32,
   directionThreshold: 0.35,
   maxDuration: 2,
+  buttonBufferSeconds: COMBAT.attackBufferSeconds,
   // Retained for compatibility with move-table consumers; live meter uses METER.
   meterMax: 100,
   launchLift: 0.08,
@@ -166,7 +167,7 @@ export const MOVE_DATA = {
     ['needle', 'Needle', 'heavy', .055, .055, .16, 6, 1, 1.65,
       { cancelInto: ['run-cancel'], clipSpeed: 2.4 }],
     ['retreat', 'Parting Gift', 'back,kick', .05, .08, .15, 5, 2, 1.7,
-      { effects: { speed: -6 }, hitHeight: 'low', clip: 'kick', vfx: 'flash' }],
+      { effects: { speed: -5 }, hitHeight: 'low', clip: 'kick', vfx: 'flash' }],
     ['airlight', 'Air Flick', 'light', .035, .07, .12, 3, .5, 1.4,
       { airborne: true, hitHeight: 'air', clipSpeed: 2.5 }],
   ],
@@ -185,7 +186,7 @@ export const MOVE_DATA = {
     ['sweep', 'Long Sweep', 'kick', .21, .14, .33, 13, 4, 3,
       { hitHeight: 'low', knocksDown: true, clip: 'kick', vfx: 'reach' }],
     ['backstep', 'Recede', 'back,back,light', .09, .12, .24, 8, 3, 2.8,
-      { effects: { speed: -5 }, vfx: 'reach' }],
+      { effects: { speed: -5 }, hitHeight: 'low', clip: 'kick', vfx: 'reach' }],
     ['antiair', 'Sky Fence', 'down,up,heavy', .12, .20, .35, 16, 4, 2.7,
       { hitHeight: 'high', effects: { launch: 6 }, clip: 'kick', vfx: 'reach' }],
     ['airkick', 'Horizon', 'kick', .11, .18, .22, 12, 3, 2.8,
@@ -221,14 +222,15 @@ export const MOVE_DATA = {
       { effects: { projectile: { speed: 11, life: .9, offset: 1.1 } }, vfx: 'flame' }],
     ['dive', 'Falling Sun', 'kick', .09, .22, .27, 27, 8, 1.8,
       { airborne: true, knocksDown: true, hitHeight: 'air',
-        effects: { dive: 11, speed: 8 }, clip: 'dropkick', vfx: 'flame' }],
+        effects: { dive: 11, speed: 5 }, clip: 'dropkick', vfx: 'flame' }],
     ['overdrive', 'Burnout', 'back,down,forward,heavy', .19, .20, .48, 40, 13, 2.5,
       { knocksDown: true, effects: { selfDamage: 14, speed: 5 },
         vfx: 'flame', meterGain: 10 }],
     ['sweep', 'Ash Line', 'kick', .17, .12, .33, 18, 5, 1.9,
       { hitHeight: 'low', knocksDown: true, clip: 'kick', vfx: 'flame' }],
     ['burst', 'Firebreak', 'back,back,heavy', .23, .17, .43, 25, 8, 2.3,
-      { effects: { radial: true }, knocksDown: true, vfx: 'flame' }],
+      { hitHeight: 'mid', knocksDown: true, effects: { radial: true },
+        clip: 'kick', vfx: 'flame' }],
     ['uppercut', 'Flare Up', 'forward,down,heavy', .11, .17, .41, 23, 3, 1.6,
       { hitHeight: 'high', effects: { launch: 8 }, clip: 'kick', vfx: 'flame' }],
     ['airlight', 'Hot Touch', 'light', .065, .10, .23, 13, 2, 1.5,
@@ -318,7 +320,7 @@ export const AUDIO = {
     },
     block: {
       noise: {
-        filter: 'lowpass', q: 0.7, fromHz: 750, toHz: 280,
+        filter: 'lowpass', q: 0.7, fromHz: 1300, toHz: 280,
         volume: 0.15, attack: 0.006, duration: 0.1,
       },
       tone: { fromHz: 90, toHz: 45, volume: 0.3, attack: 0.006, duration: 0.14 },
@@ -368,7 +370,7 @@ export const AUDIO = {
     parry: {
       noise: {
         filter: 'bandpass', q: 16, fromHz: 4800, toHz: 4500,
-        volume: 0.12, attack: 0.001, duration: 0.08,
+        volume: 0.12, attack: 0.003, duration: 0.08,
       },
       tone: {
         type: 'triangle', fromHz: 1568, toHz: 1580,
@@ -384,7 +386,7 @@ export const AUDIO = {
     },
     throw: {
       noise: {
-        filter: 'lowpass', q: 1.4, fromHz: 6200, toHz: 340,
+        filter: 'bandpass', q: 1.4, fromHz: 6200, toHz: 340,
         volume: 0.44, attack: 0.001, duration: 0.12,
       },
       tone: { fromHz: 155, toHz: 32, volume: 0.58, attack: 0.003, duration: 0.3 },
@@ -591,12 +593,59 @@ export const ARENA = {
   camera: { x: 0, y: 10, z: 9.5, pitchDeg: -38, fov: 40, near: 1, far: 220 },
 };
 
+/**
+ * Pass order is also the allocation policy: absent passes own no resources.
+ * Grading and OutputPass stay enabled on every tier.
+ * Timing uses milliseconds of real presentation time, not simulation time.
+ */
+export const POST = {
+  initialTier: 'medium',
+  warmupMs: 250,
+  sampleMs: 1750,
+  emergencyWindowMs: 400,
+  emergencyFrameMs: 45,
+  initialFrameMs: { high: 18, medium: 28 },
+  sustainedFrameMs: { high: 22, medium: 32 },
+  contrastPivot: 0.18,
+  ao: { radius: 0.65, thickness: 0.5, scale: 0.9, samples: 8 },
+  tiers: {
+    high: {
+      passes: ['render', 'bloom', 'ao', 'fxaa', 'vignette', 'saturation', 'tint', 'output'],
+      maxPixelRatio: 1.5,
+      resolutionScale: 1,
+    },
+    medium: {
+      passes: ['render', 'bloom', 'fxaa', 'vignette', 'saturation', 'tint', 'output'],
+      maxPixelRatio: 1.25,
+      resolutionScale: 0.85,
+    },
+    low: {
+      passes: ['render', 'fxaa', 'vignette', 'saturation', 'tint', 'output'],
+      maxPixelRatio: 1,
+      resolutionScale: 0.7,
+    },
+  },
+  gradeRanges: {
+    bloom: { strength: [0, 3], radius: [0, 1], threshold: [0, 2] },
+    exposure: [0.25, 2.5],
+    vignette: [0, 0.75],
+    saturation: [-1, 0.5],
+    tint: [0.5, 1.5],
+    contrast: [0.5, 1.5],
+  },
+};
+
 export const MAP_THEMES = [
   {
     id: 'dojo', name: 'Lantern Dojo',
     floorColor: 0x382113, skyColor: 0x24150e,
     fog: { color: 0x392719, near: 80, far: 180 },
     roughness: 0.85, metalness: 0, boundaryColor: 0xe6b46b,
+    grade: {
+      bloom: { strength: 0.38, radius: 0.65, threshold: 1.05 },
+      exposure: 1.05, vignette: 0.22, saturation: -0.06,
+      tint: [1.08, 1.01, 0.9], contrast: 0.94,
+    },
     lights: [
       { type: 'hemisphere', color: 0xffdda5, groundColor: 0x39221a, intensity: 1.1 },
       { type: 'directional', color: 0xffd49b, intensity: 2.0, position: [4, 9, 5], shadow: true },
@@ -620,6 +669,11 @@ export const MAP_THEMES = [
     floorColor: 0x151c29, skyColor: 0x030611,
     fog: { color: 0x0c1027, near: 80, far: 180 },
     roughness: 0.18, metalness: 0.45, boundaryColor: 0x6fe7ff,
+    grade: {
+      bloom: { strength: 1.25, radius: 0.5, threshold: 0.72 },
+      exposure: 1.0, vignette: 0.3, saturation: 0.16,
+      tint: [1.02, 0.97, 1.08], contrast: 1.06,
+    },
     lights: [
       { type: 'hemisphere', color: 0x6f8dcc, groundColor: 0x101327, intensity: 0.85 },
       { type: 'directional', color: 0xb7d4ff, intensity: 1.6, position: [4, 9, 5], shadow: true },
@@ -650,6 +704,11 @@ export const MAP_THEMES = [
     floorColor: 0x343640, skyColor: 0x55405f,
     fog: { color: 0x695b78, near: 80, far: 180 },
     roughness: 0.92, metalness: 0.03, boundaryColor: 0xd7b18a,
+    grade: {
+      bloom: { strength: 0.18, radius: 0.8, threshold: 1.2 },
+      exposure: 1.08, vignette: 0.12, saturation: -0.24,
+      tint: [1.06, 1.01, 0.92], contrast: 0.8,
+    },
     lights: [
       { type: 'hemisphere', color: 0xbaacd7, groundColor: 0x343440, intensity: 1.15 },
       { type: 'directional', color: 0xffb879, intensity: 2.1, position: [-6, 8, 4], shadow: true },
@@ -669,9 +728,14 @@ export const MAP_THEMES = [
   },
   {
     id: 'rooftop', name: 'Highline Rooftop',
-    floorColor: 0x363e4c, skyColor: 0x182338,
-    fog: { color: 0x39465c, near: 65, far: 160 },
+    floorColor: 0x363e4c, skyColor: 0x8babc8,
+    fog: { color: 0x9aadc5, near: 65, far: 160 },
     roughness: 0.93, metalness: 0.03, boundaryColor: 0xb8c9de,
+    grade: {
+      bloom: { strength: 0.42, radius: 0.7, threshold: 1.1 },
+      exposure: 1.18, vignette: 0.08, saturation: -0.12,
+      tint: [0.9, 1.01, 1.13], contrast: 0.98,
+    },
     lights: [
       { type: 'hemisphere', color: 0xa5bbdf, groundColor: 0x293343, intensity: 1.25 },
       { type: 'directional', color: 0xd4e3ff, intensity: 1.75, position: [4, 9, 5], shadow: true },
@@ -806,8 +870,8 @@ export const AI = {
       damage: 0.025,
       range: { close: 0.1, mid: 1, far: 2 },
       stringStarter: 1.5,
-      antiAir: 3,
       launch: 1,
+      antiAir: 3,
       grab: 5,
       low: 2,
       punishDamage: 0.08,
@@ -817,6 +881,7 @@ export const AI = {
       unsuitable: 6,
       escape: 10,
       mobilityCancel: 4,
+      selfDamageCancel: 0.08,
       selfDamage: 0.08,
       variation: 0.4,
     },
@@ -930,5 +995,84 @@ export const SUPER_DATA = {
       { frame: 60, damage: 4, burn: true },
       { frame: 78, damage: 4, burn: true, knocksDown: true, knockback: 4 },
     ],
+  },
+};
+
+/**
+ * Decoration-only allowance, included in MAP_ART.meshBudget by tests.
+ * Background specs are far-to-near. Factors are world X motion / camera X
+ * motion; foreground edge safety may constrain its authored motion.
+ */
+export const BACKDROP = {
+  drawCallBudget: 8,
+  triangleBudget: 12000,
+  clearance: 1,
+  sourceSamples: 24,
+  sampleEpsilon: 1e-6,
+  minimumProfileHeight: 0.015,
+  hazeColor: 0x4f6d99,
+  jitter: 0.16,
+  widthMin: 0.88,
+  widthRange: 0.24,
+  heightMin: 0.72,
+  heightRange: 0.4,
+  unlitFraction: 0.36,
+  windowColor: 0xf1c89b,
+  windowSpread: 0.4,
+  windowBottom: 0.14,
+  windowVerticalSpan: 0.43,
+  windowWidth: 0.035,
+  windowHeight: 0.15,
+  windowLift: 0.02,
+  canyon: { base: 0.72, flanks: 0.65 },
+  layers: [
+    {
+      name: 'far', z: -70, parallax: 0.06,
+      span: 240, count: 16, baseY: -36, height: 32, thickness: 0.08,
+      brightness: 0.28, blueMix: 0.82,
+      windowRows: 0, windowColumns: 0, windowBrightness: 0.12,
+    },
+    {
+      name: 'middle', z: -42, parallax: 0.24,
+      span: 210, count: 24, baseY: -18, height: 26, thickness: 0.6,
+      brightness: 0.46, blueMix: 0.5,
+      windowRows: 3, windowColumns: 2, windowBrightness: 0.28,
+    },
+    {
+      name: 'near', z: -24, parallax: 0.52,
+      span: 180, count: 30, baseY: -6, height: 20, thickness: 2,
+      brightness: 0.7, blueMix: 0.14,
+      windowRows: 7, windowColumns: 3, windowBrightness: 0.72,
+    },
+  ],
+  foreground: {
+    parallax: 0.94,
+    nearScale: 1.35,
+    edgeNdc: 0.98,
+    minEdgeNdc: 0.84,
+    maxEdgeNdc: 1.25,
+    widthNdc: 0.3,
+    heightNdc: 2.16,
+    color: 0x070b11,
+    opacity: 0.8,
+    softness: 0.13,
+  },
+  maps: {
+    dojo: {
+      seed: 101, color: 0x776353,
+      kinds: ['mountain', 'roof', 'roof'], windows: false,
+    },
+    'neon-street': {
+      seed: 211, color: 0x4f5269,
+      kinds: ['city', 'city', 'skyscraper'], windows: true,
+    },
+    'temple-courtyard': {
+      seed: 307, color: 0x526454,
+      kinds: ['forest', 'forest', 'tree'], windows: false,
+    },
+    rooftop: {
+      seed: 419, color: 0x748591,
+      kinds: ['city', 'city', 'skyscraper'], windows: true,
+    },
   },
 };

@@ -602,6 +602,7 @@ function buildTheme(scene, theme) {
 
   dispose.dispose = dispose;
   dispose.mapId = theme.id;
+  dispose.grade = theme.grade;
 
   try {
     addLighting(root, theme);
@@ -627,6 +628,7 @@ export const MAPS = MAP_THEMES.map((theme) => ({
   skyColor: theme.skyColor,
   fog: theme.fog,
   lights: theme.lights,
+  grade: theme.grade,
   build: (scene) => buildTheme(scene, theme),
 }));
 
