@@ -4,9 +4,9 @@
  * Plans are committed in update(), so pausing also freezes AI decisions.
  */
 import {
-  AI, COMBAT, ARENA, BODY, DIFFICULTIES, MOVE_DATA, MOVE_RULES,
-  METER, SUPER_DATA, SUPER_RULES,
+  AI, COMBAT, ARENA, BODY, DIFFICULTIES, MOVE_RULES, METER, SUPER_RULES,
 } from './config.js';
+import { MOVE_DATA, SUPER_DATA } from './game-data.js';
 import { State } from './fighter.js';
 import { appendInput, directionToken, resolveMove } from './moves.js';
 

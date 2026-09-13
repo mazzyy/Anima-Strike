@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import {
   MOVES, MOVE_TABLES, canCancel, resolveMove, directionToken, appendInput,
 } from '../renderer/src/moves.js';
-import {
-  CHARACTER_ROSTER, MOVE_RULES, CLIPS, AUDIO,
-} from '../renderer/src/config.js';
+import { CHARACTER_ROSTER, MOVE_RULES, CLIPS } from '../renderer/src/config.js';
+import { AUDIO } from '../renderer/src/game-data.js';
 
 function history(command, step = .08) {
   return command.split(',').map((input, index) => ({ input, time: index * step }));

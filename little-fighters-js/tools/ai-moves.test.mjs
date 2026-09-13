@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import { Group } from 'three';
 import { AIController } from '../renderer/src/ai.js';
 import { Fighter, State } from '../renderer/src/fighter.js';
-import {
-  ARENA, DIFFICULTIES, METER, MOVE_DATA, MOVE_RULES,
-} from '../renderer/src/config.js';
+import { ARENA, DIFFICULTIES, METER, MOVE_RULES } from '../renderer/src/config.js';
+import { MOVE_DATA } from '../renderer/src/game-data.js';
 import { appendInput, directionToken, resolveMove } from '../renderer/src/moves.js';
 
 const DT = 1 / 60;

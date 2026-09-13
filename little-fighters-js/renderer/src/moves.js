@@ -14,7 +14,10 @@
  * Neutral entries separate repeated taps but are ignored while matching.
  * Other tokens are never skipped: a wrong direction breaks the command.
  */
-import { MOVE_DATA, MOVE_RULES } from './config.js';
+import {
+  MOVE_RULES,
+} from './config.js';
+import { MOVE_DATA } from './game-data.js';
 
 function freeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {

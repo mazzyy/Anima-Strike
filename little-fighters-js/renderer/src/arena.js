@@ -1,9 +1,12 @@
 /**
  * Persistent renderer, camera, post-processing and pooled VFX.
- * Maps and decorative backdrops have separate ownership.
+ * Maps own their skies; decorative backdrops have separate ownership.
  */
 import * as THREE from 'three';
-import { ARENA, CAMERA, MAP_THEMES } from './config.js';
+import {
+  ARENA, CAMERA,
+} from './config.js';
+import { MAP_THEMES } from './map-themes.js';
 import { buildMap } from './arenas.js';
 import { createBackdrop } from './backdrop.js';
 import { createPost } from './post.js';
@@ -129,6 +132,7 @@ export function createArena(canvas, mapId, { backdropSources = {} } = {}) {
   let map = buildMap(scene, mapId);
   let backdrop = createBackdrop(scene, map.mapId, { sources: backdropSources });
   let disposed = false;
+  let lastSkyTime = null;
   const camera = new THREE.PerspectiveCamera(
     ARENA.camera.fov, window.innerWidth / window.innerHeight,
     ARENA.camera.near, ARENA.camera.far,
@@ -155,6 +159,8 @@ export function createArena(canvas, mapId, { backdropSources = {} } = {}) {
     backdrop = createBackdrop(scene, map.mapId, { sources: backdropSources });
     post.setGrade(MAP_THEMES.find((theme) => theme.id === map.mapId).grade);
     resetCamera();
+    lastSkyTime = null;
+    map.update(0, camera);
     backdrop.update(camera);
     return map.mapId;
   }
@@ -165,6 +171,7 @@ export function createArena(canvas, mapId, { backdropSources = {} } = {}) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     updateCamera(0);
+    map.update(0, camera);
     backdrop.update(camera);
     post.setSize(w, h, window.devicePixelRatio);
   }
@@ -189,10 +196,16 @@ export function createArena(canvas, mapId, { backdropSources = {} } = {}) {
     updateCamera, resetCamera,
     render: () => {
       if (disposed) return;
+      const now = performance.now();
+      const active = !document.hidden;
+      const dt = active && lastSkyTime !== null
+        ? Math.max(0, (now - lastSkyTime) / 1000) : 0;
+      lastSkyTime = active ? now : null;
       // Projection guards use the final shaken camera, including resize,
       // tracking pull-back and KO push-in, rather than last frame's framing.
+      map.update(dt, camera);
       backdrop.update(camera);
-      post.render(performance.now(), !document.hidden);
+      post.render(now, active);
     },
   };
 }

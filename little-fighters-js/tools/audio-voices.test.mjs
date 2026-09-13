@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AUDIO, MOVE_DATA } from '../renderer/src/config.js';
+import { AUDIO, MOVE_DATA } from '../renderer/src/game-data.js';
 import { MOVES } from '../renderer/src/moves.js';
 
 test('every authored move has its own existing, distinct voice', () => {

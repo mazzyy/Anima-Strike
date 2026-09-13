@@ -12,7 +12,10 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
 import { HueSaturationShader } from 'three/addons/shaders/HueSaturationShader.js';
-import { MAP_THEMES, POST } from './config.js';
+import {
+  POST,
+} from './config.js';
+import { MAP_THEMES } from './map-themes.js';
 
 const tierNames = ['low', 'medium', 'high'];
 

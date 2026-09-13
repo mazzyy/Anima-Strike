@@ -167,7 +167,11 @@ for (const { action, state, tuning } of VARIANTS) {
     press(fighter, 'jump');
     assert.equal(fighter.state, State.JUMP);
     press(fighter, action);
-    assert.equal(fighter.state, state);
+    // Dedicated air punch states superseded LIGHT_ATTACK/HEAVY_ATTACK while airborne.
+    assert.equal(
+      fighter.state,
+      action === 'light' ? State.AIR_LIGHT_ATTACK : State.AIR_HEAVY_ATTACK,
+    );
     assert.equal(fighter.attackKnocksDown, true);
   });
 

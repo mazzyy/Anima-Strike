@@ -1,10 +1,7 @@
 import {
-  CHARACTER_ROSTER,
-  CHARACTER_DEFAULTS,
-  MAP_THEMES,
-  DIFFICULTIES,
-  MENU,
+  CHARACTER_ROSTER, CHARACTER_DEFAULTS, DIFFICULTIES, MENU,
 } from './config.js';
+import { MAP_THEMES } from './map-themes.js';
 
 /**
  * Headless match-setup state machine. Character and map payloads are IDs.

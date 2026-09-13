@@ -1,20 +1,26 @@
 /**
- * Proves every renderer module still links against the vendored three.js.
+ * Proves every renderer module still parses and links against the vendored
+ * three.js — one test per module, deliberately.
  *
  *   node --test tools/module-graph.test.mjs
  *
- * Why this exists: a bad named import — `import { SkeletonUtils }` from a
- * build that exports bare `clone`/`retarget` functions — is a LINK-time
- * error. The module graph never instantiates, so not one line of main.js
+ * Why this exists: a bad named import, or a syntax error, is a LINK-time
+ * failure. The module graph never instantiates, so not one line of main.js
  * runs, boot() never exists, and boot().catch() can never report it. The app
- * sits on "loading…" forever while every other test passes, because the
- * combat tests import fighter.js and rounds.js directly and never touch
- * assets.js, which needs a browser.
+ * sits on "loading…" while every combat test passes, because those import
+ * fighter.js directly and never touch the renderer's entry point.
  *
- * This test closes that hole without a browser: Node's own linker walks the
- * real graph from main.js down through the vendored three.js and fails on any
- * missing module or missing export. It is the cheapest possible check that
- * the app can still start.
+ * Why ONE TEST PER MODULE, and not a loop inside a single test: the build gate
+ * compares which test NAMES fail before and after an item, and reverts an item
+ * that breaks something which was passing. A single "every module links" test
+ * that is already failing for one reason absorbs every later reason — the name
+ * is already in the failing set, the counts do not move, and the gate sees
+ * nothing. That is exactly how a `-x ** 2` syntax error in sky.js reached
+ * disk: SyntaxError, unary operator before an exponentiation, and the suite
+ * reported the identical 189/164/25 either way.
+ *
+ * Granular tests are not a style preference here. They are what makes the
+ * difference between "something is broken" and "THIS became broken".
  */
 
 import test from 'node:test';
@@ -27,17 +33,18 @@ register('./vendor-resolve.mjs', import.meta.url);
 
 const SRC = new URL('../renderer/src/', import.meta.url);
 const INDEX = new URL('../renderer/index.html', import.meta.url);
+const MODULES = readdirSync(fileURLToPath(SRC)).filter((f) => f.endsWith('.js')).sort();
 
 /**
  * main.js reads the DOM at module scope, so linking alone is not enough to
- * import it — evaluation needs something for `document` to be. These stubs
- * are deliberately dumb: this test asserts the graph loads, not that the game
+ * import it — evaluation needs something for `document` to be. These stubs are
+ * deliberately dumb: this file asserts the graph loads, not that the game
  * behaves. Behaviour is covered by the other suites.
  */
 function installDomStubs() {
   if (globalThis.document) return;
   const node = () => ({
-    textContent: '', style: {}, dataset: {}, width: 0, height: 0,
+    textContent: '', style: {}, dataset: {}, width: 0, height: 0, hidden: false,
     classList: { add() {}, remove() {}, contains: () => false, toggle() {} },
     append() {}, appendChild() {}, remove() {}, setAttribute() {},
     addEventListener() {}, removeEventListener() {}, focus() {}, blur() {},
@@ -71,23 +78,28 @@ test('the importmap still points at the vendored three.js', () => {
     'vendor-resolve.mjs mirrors this path — change both together');
 });
 
-test('the whole module graph links from main.js', async () => {
+test('the renderer source tree is where it should be', () => {
+  assert.ok(MODULES.length >= 10,
+    `found ${MODULES.length} modules under renderer/src — expected the whole tree`);
+  assert.ok(MODULES.includes('main.js'), 'main.js is missing');
+});
+
+// One test per module. A newly broken module produces a NEW failing name,
+// which is what the build gate needs in order to notice it.
+for (const file of MODULES) {
+  test(`${file} parses and links`, async () => {
+    installDomStubs();
+    await assert.doesNotReject(
+      import(new URL(file, SRC).href),
+      `${file} failed to link — it would take the whole app down with it`,
+    );
+  });
+}
+
+test('the whole graph links from main.js', async () => {
   installDomStubs();
   await assert.doesNotReject(
     import(new URL('main.js', SRC).href),
     'a module in the graph failed to link — the app would hang on "loading…"',
   );
-});
-
-test('every module under renderer/src links on its own', async () => {
-  installDomStubs();
-  const files = readdirSync(fileURLToPath(SRC)).filter((f) => f.endsWith('.js'));
-  assert.ok(files.length >= 10, 'expected the renderer source tree, found nothing');
-
-  for (const file of files) {
-    await assert.doesNotReject(
-      import(new URL(file, SRC).href),
-      `${file} failed to link — it would take the whole app down with it`,
-    );
-  }
 });

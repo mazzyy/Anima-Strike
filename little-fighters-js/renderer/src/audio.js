@@ -3,7 +3,7 @@
  * play(name, { phase, speed }) accepts any AUDIO.sounds ID.
  * Unsupported audio, suspended contexts, and unknown IDs are silent no-ops.
  */
-import { AUDIO } from './config.js';
+import { AUDIO } from './game-data.js';
 
 let context = null;
 let master = null;

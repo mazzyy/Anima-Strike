@@ -4,10 +4,9 @@
  */
 import * as THREE from 'three';
 import {
-  MOVEMENT, COMBAT, BODY, ARENA, HEALTH, FIGHTER_STATS, AUDIO,
-  STATE_CLIP, LOOPING_STATES, MODEL_YAW_OFFSET, MOVE_RULES,
-  SUPER_RULES, SUPER_DATA,
+  MOVEMENT, COMBAT, BODY, ARENA, HEALTH, FIGHTER_STATS, STATE_CLIP, LOOPING_STATES, MODEL_YAW_OFFSET, MOVE_RULES, SUPER_RULES,
 } from './config.js';
+import { AUDIO, SUPER_DATA } from './game-data.js';
 import { MOVES, resolveMove, appendInput, directionToken } from './moves.js';
 import { fillMeter, spendStock } from './meter.js';
 

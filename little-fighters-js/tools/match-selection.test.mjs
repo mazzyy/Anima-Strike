@@ -1,13 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMatchSelection } from '../renderer/src/match-selection.js';
-import {
-  CHARACTER_ROSTER,
-  CHARACTER_DEFAULTS,
-  MAP_THEMES,
-  DIFFICULTIES,
-  MENU,
-} from '../renderer/src/config.js';
+import { CHARACTER_ROSTER, CHARACTER_DEFAULTS, DIFFICULTIES, MENU } from '../renderer/src/config.js';
+import { MAP_THEMES } from '../renderer/src/map-themes.js';
 
 test('setup requires both characters and a map before producing a start payload', () => {
   const selection = createMatchSelection();

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Fighter, State } from '../renderer/src/fighter.js';
-import { AUDIO, ARENA, COMBAT, INPUT_MAPS } from '../renderer/src/config.js';
+import { ARENA, COMBAT, INPUT_MAPS } from '../renderer/src/config.js';
+import { AUDIO } from '../renderer/src/game-data.js';
 import { play } from '../renderer/src/audio.js';
 
 function makeFighter(x = -0.6) {
@@ -58,7 +59,8 @@ test('accepted hits and blocks sound once, with no following whiff', () => {
     a.fighter.update(length * 0.05, world);
     a.fighter.update(length, world);
 
-    assert.deepEqual(b.sounds, [blocked ? 'block' : 'hit']);
+    // Per-move sounds replaced the generic 'hit' with 'jab' for light punches.
+    assert.deepEqual(b.sounds, [blocked ? 'block' : 'jab']);
     assert.deepEqual(a.sounds, []);
     const damage = blocked
       ? Math.round(COMBAT.lightAttack.damage * COMBAT.blockDamageMult)
@@ -80,7 +82,8 @@ test('blocks with zero chip and lethal chip still sound; rear hits are hits', ()
   lethal.fighter.health.current = 1;
   assert.equal(lethal.fighter.takeHit(10, front), 'block');
   assert.equal(lethal.fighter.state, State.KO);
-  assert.deepEqual(lethal.sounds, ['block']);
+  // KO audio added a stinger before the block sound on lethal chip.
+  assert.deepEqual(lethal.sounds, ['ko', 'block']);
 
   const rear = makeFighter(0.6);
   rear.fighter.state = State.BLOCK;

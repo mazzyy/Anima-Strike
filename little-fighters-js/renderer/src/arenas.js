@@ -1,13 +1,19 @@
 /**
  * Procedural stages. Each build owns one scene child and all its resources.
- * No textures, external assets, browser APIs, or renderer are required.
+ * No external assets, browser APIs, or renderer are required.
  *
  * buildMap() and MAPS[n].build() return a callable disposer, also exposed as
  * .dispose(). Repeated geometry/material pairs become static instanced batches.
+ * .update(dt, camera) places and advances the owned atmospheric sky.
+ * .setQuality(tier) changes planar reflection quality without rebuilding.
+ * .addMark(kind, position, size, angle) projects a persistent pooled mark.
  */
 
 import * as THREE from 'three';
-import { ARENA, BODY, MAP_ART, MAP_THEMES } from './config.js';
+import { ARENA, BODY, MAP_ART } from './config.js';
+import { MAP_THEMES } from './map-themes.js';
+import { createSky } from './sky.js';
+import { createSurfaces } from './surfaces.js';
 
 function fraction(value) {
   return value - Math.floor(value);
@@ -45,7 +51,7 @@ function hasAccentLight(index, count) {
   return false;
 }
 
-function createKit(root) {
+function createKit(root, surfaces) {
   const geometries = new Map();
   const materials = new Map();
   const batches = new Map();
@@ -74,7 +80,18 @@ function createKit(root) {
     const properties = basic
       ? { color, toneMapped: false, ...options }
       : { color, roughness: MAP_ART.roughness, metalness: 0, ...options };
-    const key = JSON.stringify([basic, properties]);
+
+    // Do not serialize textures: Texture.toJSON may serialize a canvas and
+    // would also turn this small cache key into an entire image payload.
+    const key = JSON.stringify([
+      basic,
+      Object.entries(properties).sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, value]) => [
+          name,
+          value?.isTexture ? value.uuid
+            : value?.isVector2 ? value.toArray() : value,
+        ]),
+    ]);
     if (!materials.has(key)) {
       materials.set(key, basic
         ? new THREE.MeshBasicMaterial(properties)
@@ -83,8 +100,14 @@ function createKit(root) {
     return materials.get(key);
   }
 
-  // Return a staging transform so callers can rotate a patch before finalize().
-  // There is no temporary Mesh (or scene child) per tile.
+  function surfaceMaterial(color, options = {}) {
+    return material(color, {
+      ...options,
+      ...surfaces.materialProperties(),
+    });
+  }
+
+  // Return a staging transform so callers can rotate before finalize().
   function mesh(kind, mat, x, y, z, sx, sy, sz) {
     if (!batches.has(mat)) batches.set(mat, new Map());
     const kinds = batches.get(mat);
@@ -146,8 +169,6 @@ function createKit(root) {
   }
 
   function dispose() {
-    // InstancedMesh.dispose releases instance-specific renderer allocations.
-    // Shared geometry/material ownership remains here, disposed once each.
     for (const item of instances) item.dispose();
     for (const item of geometries.values()) item.dispose();
     for (const item of materials.values()) item.dispose();
@@ -157,7 +178,9 @@ function createKit(root) {
     batches.clear();
   }
 
-  return { material, mesh, box, patch, point, finalize, dispose };
+  return {
+    material, surfaceMaterial, mesh, box, patch, point, finalize, dispose,
+  };
 }
 
 function addLighting(root, theme) {
@@ -173,8 +196,6 @@ function addLighting(root, theme) {
 
       if (spec.shadow) {
         const settings = MAP_ART.shadow;
-        // Move along the same direction so the entire wide floor is in front
-        // of the shadow camera, not just enlarge its orthographic rectangle.
         light.position.multiplyScalar(settings.lightDistanceScale);
         light.castShadow = true;
         light.shadow.mapSize.set(settings.size, settings.size);
@@ -194,16 +215,19 @@ function addLighting(root, theme) {
       light.target.position.y = ARENA.floorY;
       root.add(light.target);
     }
+    if (spec.role) {
+      light.name = `arena:${spec.role}`;
+      light.userData.role = spec.role;
+    }
     root.add(light);
   }
 }
 
 function addFloor(kit, theme) {
   const { floorWidth, floorDepth, floorThickness, deckSink } = MAP_ART;
-  // Slab top stays below the y=0 decking, never coplanar with it.
+  // Slab top remains below the y=0 decking.
   kit.box(
-    kit.material(theme.floorColor, {
-      roughness: theme.roughness,
+    kit.surfaceMaterial(theme.floorColor, {
       metalness: theme.metalness,
     }),
     0, -deckSink - floorThickness / 2, 0,
@@ -233,8 +257,7 @@ function addTiles(kit, theme, settings) {
   const countZ = Math.max(1, Math.round(MAP_ART.floorDepth / settings.tileSize));
   const sizeX = MAP_ART.floorWidth / countX;
   const sizeZ = MAP_ART.floorDepth / countZ;
-  const mats = settings.colors.map((color) => kit.material(color, {
-    roughness: theme.roughness,
+  const mats = settings.colors.map((color) => kit.surfaceMaterial(color, {
     metalness: theme.metalness,
   }));
 
@@ -255,11 +278,11 @@ function addTiles(kit, theme, settings) {
 function buildDojo(kit, theme) {
   const d = theme.decor;
   const halfX = MAP_ART.floorWidth / 2;
-  const wood = d.woodColors.map((color) => kit.material(color));
+  const wood = d.woodColors.map((color) => kit.surfaceMaterial(color));
   const rows = Math.max(1, Math.round(MAP_ART.floorDepth / d.boardWidth));
   const width = MAP_ART.floorDepth / rows;
 
-  // Planks retain authored lengths, with alternating seams and clipped ends.
+  // Planks retain authored lengths, alternating seams, and clipped ends.
   for (let row = 0; row < rows; row++) {
     const offset = (row % 2) * d.boardLength / 2;
     let column = 0;
@@ -392,31 +415,9 @@ function buildStreet(kit, theme) {
         x, signY, d.signZ + d.lightOffset,
       );
     }
-
-    // At most reflectionRows * palette size materials/batches, independent
-    // of stage width. Transparent additive strips do not need depth sorting.
-    for (let row = 0; row < d.reflectionRows; row++) {
-      const t = row / d.reflectionRows;
-      const ripple = noise(index * d.reflectionRows + row);
-      const reflected = kit.material(color, {
-        transparent: true,
-        opacity: d.reflectionOpacity * (1 - t),
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }, true);
-      kit.patch(
-        reflected,
-        x + (ripple - 0.5) * d.reflectionJitter,
-        MAP_ART.surfaceLift,
-        d.reflectionStartZ + t * d.reflectionLength,
-        d.signWidth * (d.reflectionMinWidth + ripple * d.reflectionWidthRange),
-        d.reflectionStripDepth,
-      );
-    }
   });
 
   const curb = kit.material(d.curbColor);
-  // End curbs run toward the camera: their length is floorDepth, not width.
   for (const sign of [-1, 1]) {
     kit.box(
       curb, sign * (MAP_ART.floorWidth / 2 - d.curbWidth / 2),
@@ -424,7 +425,6 @@ function buildStreet(kit, theme) {
       d.curbWidth, d.curbHeight, MAP_ART.floorDepth,
     );
   }
-  // Repeated curb stones also carry the street frontage across the full width.
   repeatXs(d.curbLength, 0, 550).forEach((x, index) => {
     const height = d.curbHeight * variation(index + 600);
     kit.box(
@@ -433,25 +433,8 @@ function buildStreet(kit, theme) {
     );
   });
 
-  const puddle = kit.material(d.puddleColor, {
-    roughness: d.puddleRoughness,
-    metalness: d.puddleMetalness,
-    transparent: true,
-    opacity: d.puddleOpacity,
-    depthWrite: false,
-  });
-  const puddles = Math.ceil(MAP_ART.floorWidth * MAP_ART.floorDepth / d.puddleArea);
-  for (let i = 0; i < puddles; i++) {
-    const transform = kit.patch(
-      puddle,
-      (noise(i + 700) - 0.5) * (MAP_ART.floorWidth - d.puddleWidth * 2),
-      MAP_ART.surfaceLift / 2,
-      (noise(i + 800) - 0.5) * (MAP_ART.floorDepth - d.puddleWidth * 2),
-      d.puddleWidth * (1 + noise(i + 900)),
-      d.puddleDepth,
-    );
-    transform.rotation.z = noise(i + 1000) * Math.PI;
-  }
+  // Real reflection replaces the additive sign strips and flat puddle boxes.
+  // Low quality retains the wet normal/roughness response, without a reflector.
 }
 
 function buildTemple(kit, theme) {
@@ -479,8 +462,6 @@ function buildTemple(kit, theme) {
   repeatXs(d.pillarSpacing, d.baseWidth / 2, 1100).forEach((x, index) => {
     pillar(x, d.pillarZ, index + 1150);
   });
-  // Side columns remain outside the collision strip; no invisible obstacles
-  // are introduced by repeating columns through the playable interior.
   for (const sign of [-1, 1]) {
     d.sidePillarZs.forEach((z, index) => {
       pillar(
@@ -574,26 +555,29 @@ const BUILDERS = {
   rooftop: buildRooftop,
 };
 
-function buildTheme(scene, theme) {
+function buildTheme(scene, theme, options = {}) {
   const root = new THREE.Group();
   root.name = `arena:${theme.id}`;
-  const kit = createKit(root);
   const previousBackground = scene.background;
   const previousFog = scene.fog;
   const background = new THREE.Color(theme.skyColor);
   const fog = new THREE.Fog(theme.fog.color, theme.fog.near, theme.fog.far);
+  let sky = null;
+  let surfaces = null;
+  let kit = null;
   let disposed = false;
 
   function dispose() {
     if (disposed) return;
     disposed = true;
     root.removeFromParent();
+    sky?.dispose();
+    surfaces?.dispose();
 
-    // Light disposal also releases allocated shadow render targets.
     root.traverse((object) => {
       if (object.isLight) object.dispose?.();
     });
-    kit.dispose();
+    kit?.dispose();
     root.clear();
 
     if (scene.background === background) scene.background = previousBackground;
@@ -603,13 +587,29 @@ function buildTheme(scene, theme) {
   dispose.dispose = dispose;
   dispose.mapId = theme.id;
   dispose.grade = theme.grade;
+  dispose.update = (dt, camera) => {
+    if (!disposed) sky?.update(dt, camera);
+  };
+  dispose.setQuality = (tier) => {
+    if (!disposed) surfaces?.setQuality(tier);
+  };
+  dispose.addMark = (kind, position, size, angle = 0) => (
+    disposed ? null : surfaces?.addMark(kind, position, size, angle)
+  );
+  Object.defineProperty(dispose, 'surfaces', {
+    get: () => disposed ? null : surfaces,
+  });
 
   try {
+    surfaces = createSurfaces(root, theme, options);
+    kit = createKit(root, surfaces);
+    sky = createSky(root, theme);
     addLighting(root, theme);
     addFloor(kit, theme);
     BUILDERS[theme.id](kit, theme);
     addBoundary(kit, theme);
     kit.finalize();
+    surfaces.install();
     scene.add(root);
     scene.background = background;
     scene.fog = fog;
@@ -626,14 +626,15 @@ export const MAPS = MAP_THEMES.map((theme) => ({
   name: theme.name,
   floorColor: theme.floorColor,
   skyColor: theme.skyColor,
+  sky: theme.sky,
   fog: theme.fog,
   lights: theme.lights,
   grade: theme.grade,
-  build: (scene) => buildTheme(scene, theme),
+  build: (scene, options) => buildTheme(scene, theme, options),
 }));
 
 /** Unknown or omitted IDs select the first map. Dispose before replacing it. */
-export function buildMap(scene, mapId) {
+export function buildMap(scene, mapId, options) {
   const map = MAPS.find((candidate) => candidate.id === mapId) ?? MAPS[0];
-  return map.build(scene);
+  return map.build(scene, options);
 }

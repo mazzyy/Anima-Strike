@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { ARENA, BODY, CAMERA, MAP_ART, MAP_THEMES } from '../renderer/src/config.js';
+import { ARENA, BODY, CAMERA, MAP_ART } from '../renderer/src/config.js';
+import { MAP_THEMES } from '../renderer/src/map-themes.js';
 import { MAPS, buildMap } from '../renderer/src/arenas.js';
 import { createCameraRig } from '../renderer/src/arena.js';
 
